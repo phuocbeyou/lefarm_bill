@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  reactStrictMode: true,
+  // PWA will be configured via service worker manually
+  // next-pwa has compatibility issues with Turbopack
+  turbopack: {},
 };
 
 export default nextConfig;
