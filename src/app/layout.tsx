@@ -40,7 +40,7 @@ export default function RootLayout({
   return (
     <html lang="vi" className="dark">
       <head>
-        <link rel="apple-touch-icon" href="/logo.jpg" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/icons/icon-192x192.png" />
       </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-gray-950 min-h-screen text-white`}
@@ -52,9 +52,21 @@ export default function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `
+              window.deferredPWAInstallPrompt = null;
+              window.addEventListener('beforeinstallprompt', (e) => {
+                console.log('PWA: Global capture - beforeinstallprompt');
+                e.preventDefault();
+                window.deferredPWAInstallPrompt = e;
+                window.dispatchEvent(new CustomEvent('pwa-prompt-captured'));
+              });
+
               if ('serviceWorker' in navigator) {
                 window.addEventListener('load', function() {
-                  navigator.serviceWorker.register('/sw.js');
+                  navigator.serviceWorker.register('/sw.js').then(reg => {
+                    console.log('PWA: ServiceWorker registered');
+                  }).catch(err => {
+                    console.error('PWA: ServiceWorker registration failed', err);
+                  });
                 });
               }
             `,

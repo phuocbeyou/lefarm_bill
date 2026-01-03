@@ -11,6 +11,8 @@ import {
   initDefaultSettings,
   Settings 
 } from "@/lib/db";
+import { usePWA } from "@/hooks/usePWA";
+import { Download } from "lucide-react";
 
 // VietQR bank list with BIN codes
 const bankList = [
@@ -47,6 +49,8 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showDebug, setShowDebug] = useState(false);
+  const { isInstallable, isInstalled, isIOS, install } = usePWA();
 
   useEffect(() => {
     const loadSettings = async () => {
@@ -229,6 +233,62 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+      
+      {/* PWA Install Button / Instructions */}
+      {!isInstalled && (
+        <Card className="bg-amber-900/20 border-amber-800/50">
+          <CardContent className="p-4 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-amber-500/20 rounded-lg text-amber-500">
+                <Download size={20} />
+              </div>
+              <div>
+                <h3 className="font-semibold text-amber-500">Cài đặt ứng dụng</h3>
+                <p className="text-xs text-amber-200/60">
+                  {isIOS 
+                    ? "Để cài đặt trên iOS, nhấn nút Chia sẻ và chọn 'Thêm vào MH chính'" 
+                    : "Cài đặt để sử dụng mượt mà hơn và truy cập nhanh từ màn hình chính"}
+                </p>
+              </div>
+            </div>
+            
+            {isInstallable ? (
+              <Button
+                onClick={install}
+                className="w-full bg-amber-600 hover:bg-amber-500 text-white font-semibold"
+              >
+                Cài đặt ngay
+              </Button>
+            ) : isIOS ? (
+              <div className="p-3 bg-amber-500/10 rounded-lg border border-amber-500/20">
+                <p className="text-xs text-amber-200/80 leading-relaxed">
+                  1. Nhấn vào biểu tượng <strong>Chia sẻ</strong> (ô vuông có mũi tên lên) ở thanh công cụ trình duyệt.<br/>
+                  2. Cuộn xuống và chọn <strong>Thêm vào MH chính</strong> (Add to Home Screen).
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400 italic">
+                Trình duyệt của bạn có thể không hỗ trợ cài đặt tự động. Hãy thử sử dụng Chrome hoặc Edge.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Debug Info (Hidden by default, click version to show) */}
+      {showDebug && (
+        <Card className="bg-gray-900 border-dashed border-gray-700">
+          <CardContent className="p-3 space-y-1 text-[10px] font-mono text-gray-500">
+            <p>PWA Debug Info:</p>
+            <p>isInstallable: {String(isInstallable)}</p>
+            <p>isInstalled: {String(isInstalled)}</p>
+            <p>isIOS: {String(isIOS)}</p>
+            <p>Protocol: {typeof window !== 'undefined' ? window.location.protocol : 'N/A'}</p>
+            <p>ServiceWorker: {typeof navigator !== 'undefined' && 'serviceWorker' in navigator ? 'Supported' : 'Not Supported'}</p>
+            <p>UserAgent: {typeof navigator !== 'undefined' ? navigator.userAgent : 'N/A'}</p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Save Button */}
       <Button
@@ -239,8 +299,11 @@ export default function SettingsPage() {
       </Button>
 
       {/* Version */}
-      <p className="text-center text-xs text-gray-600">
-        Le Farm - Bill App v1.2.0 (IndexedDB)
+      <p 
+        className="text-center text-xs text-gray-600 cursor-help"
+        onClick={() => setShowDebug(!showDebug)}
+      >
+        Le Farm - Bill App v1.2.1 (IndexedDB)
       </p>
     </div>
   );
