@@ -1,36 +1,81 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Space Le Farm - Bill App
 
-## Getting Started
+A PWA bill management app for Le Farm shop with Cloudflare Workers backend and D1 database.
 
-First, run the development server:
+## Architecture
+
+- **Frontend**: Next.js 16 with React 19, deployed on Vercel
+- **Backend**: Cloudflare Workers with Hono.js
+- **Database**: Cloudflare D1 (SQLite)
+
+## Development Setup
+
+### 1. Backend (Cloudflare Worker)
 
 ```bash
+cd worker
+
+# Install dependencies
+npm install
+
+# Login to Cloudflare (first time only)
+npx wrangler login
+
+# Create D1 database (first time only)
+npm run db:create
+# Copy the database_id to wrangler.toml
+
+# Initialize local database with schema
+npm run db:init
+
+# Start development server (http://localhost:8787)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Frontend (Next.js)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+cd frontend
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Install dependencies
+npm install
 
-## Learn More
+# Create .env.local file
+echo "NEXT_PUBLIC_API_URL=http://localhost:8787" > .env.local
 
-To learn more about Next.js, take a look at the following resources:
+# Start development server (http://localhost:3000)
+npm run dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deployment
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Deploy Worker to Cloudflare
 
-## Deploy on Vercel
+```bash
+cd worker
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+# Initialize remote database (first time only)
+npm run db:init:remote
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+# Deploy
+npm run deploy
+```
+
+### Deploy Frontend to Vercel
+
+1. Push to GitHub
+2. Connect repository to Vercel
+3. Set environment variable: `NEXT_PUBLIC_API_URL=https://your-worker.workers.dev`
+
+## API Endpoints
+
+| Endpoint | Methods | Description |
+|----------|---------|-------------|
+| `/api/products` | GET, POST | Products CRUD |
+| `/api/products/:id` | GET, PUT, DELETE | Single product |
+| `/api/units` | GET, POST | Units CRUD |
+| `/api/units/:id` | PUT, DELETE | Single unit |
+| `/api/customers` | GET, POST | Customers CRUD |
+| `/api/customers/:id` | PUT, DELETE | Single customer |
+| `/api/settings` | GET, PUT | Shop settings |
+| `/api/health` | GET | Health check |

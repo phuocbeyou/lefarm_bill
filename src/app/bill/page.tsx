@@ -10,6 +10,7 @@ import {
   getAllProducts, 
   getSettings, 
   getAllCustomers,
+  saveBill,
   migrateFromLocalStorage, 
   initDefaultSettings,
   Product,
@@ -209,6 +210,24 @@ export default function BillPage() {
     setShowExportMenu(false);
 
     try {
+      // Save bill to database first
+      await saveBill({
+        customerName,
+        customerPhone,
+        customerAddress,
+        orderCode,
+        items: validItems.map(item => ({
+          productId: item.productId,
+          productName: item.productName,
+          quantity: item.quantity,
+          unit: item.unit,
+          price: item.price,
+        })),
+        subtotal,
+        discount,
+        total,
+      });
+
       await new Promise((resolve) => setTimeout(resolve, 100));
       
       const canvas = await html2canvas(exportRef.current, {

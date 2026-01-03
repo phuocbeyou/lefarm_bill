@@ -9,10 +9,15 @@ import {
   saveSettings, 
   migrateFromLocalStorage, 
   initDefaultSettings,
-  Settings 
+  getAllUnits,
+  addUnit,
+  updateUnit,
+  deleteUnit,
+  Settings,
+  Unit
 } from "@/lib/db";
 import { usePWA } from "@/hooks/usePWA";
-import { Download } from "lucide-react";
+import { Download, ChevronDown, ChevronUp, Plus, Pencil, Trash2 } from "lucide-react";
 
 // VietQR bank list with BIN codes
 const bankList = [
@@ -52,15 +57,25 @@ export default function SettingsPage() {
   const [showDebug, setShowDebug] = useState(false);
   const { isInstallable, isInstalled, isIOS, install } = usePWA();
 
+  // Units state
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [showUnits, setShowUnits] = useState(false);
+  const [newUnitName, setNewUnitName] = useState("");
+  const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
+
   useEffect(() => {
     const loadSettings = async () => {
       try {
         await migrateFromLocalStorage();
         await initDefaultSettings();
-        const data = await getSettings();
+        const [data, unitsData] = await Promise.all([
+          getSettings(),
+          getAllUnits(),
+        ]);
         if (data) {
           setSettings(data);
         }
+        setUnits(unitsData);
       } catch (error) {
         console.error("Error loading settings:", error);
       } finally {
@@ -92,6 +107,38 @@ export default function SettingsPage() {
         bankName: bank.name,
         bankBin: bank.bin,
       }));
+    }
+  };
+
+  // Units handlers
+  const handleAddUnit = async () => {
+    if (!newUnitName.trim()) return;
+    try {
+      const unit = await addUnit(newUnitName.trim());
+      setUnits([...units, unit]);
+      setNewUnitName("");
+    } catch (error) {
+      console.error("Error adding unit:", error);
+    }
+  };
+
+  const handleUpdateUnit = async () => {
+    if (!editingUnit || !editingUnit.name.trim()) return;
+    try {
+      await updateUnit(editingUnit);
+      setUnits(units.map((u) => (u.id === editingUnit.id ? editingUnit : u)));
+      setEditingUnit(null);
+    } catch (error) {
+      console.error("Error updating unit:", error);
+    }
+  };
+
+  const handleDeleteUnit = async (id: string) => {
+    try {
+      await deleteUnit(id);
+      setUnits(units.filter((u) => u.id !== id));
+    } catch (error) {
+      console.error("Error deleting unit:", error);
     }
   };
 
@@ -233,6 +280,99 @@ export default function SettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Units Management */}
+      <Card className="bg-gray-900 border-gray-800">
+        <CardContent className="p-4">
+          <button
+            onClick={() => setShowUnits(!showUnits)}
+            className="w-full flex items-center justify-between"
+          >
+            <h2 className="font-semibold text-white flex items-center gap-2">
+              📏 Đơn vị tính
+            </h2>
+            {showUnits ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+          </button>
+
+          {showUnits && (
+            <div className="mt-4 space-y-3">
+              {/* Add new unit */}
+              <div className="flex gap-2">
+                <Input
+                  value={newUnitName}
+                  onChange={(e) => setNewUnitName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleAddUnit()}
+                  placeholder="Thêm đơn vị mới..."
+                  className="bg-gray-800 border-gray-700 flex-1"
+                />
+                <Button
+                  onClick={handleAddUnit}
+                  disabled={!newUnitName.trim()}
+                  size="sm"
+                  className="bg-amber-600 hover:bg-amber-500"
+                >
+                  <Plus size={16} />
+                </Button>
+              </div>
+
+              {/* Units list */}
+              <div className="space-y-2">
+                {units.map((unit) => (
+                  <div
+                    key={unit.id}
+                    className="flex items-center gap-2 p-2 bg-gray-800/50 rounded-lg"
+                  >
+                    {editingUnit?.id === unit.id ? (
+                      <>
+                        <Input
+                          value={editingUnit.name}
+                          onChange={(e) =>
+                            setEditingUnit({ ...editingUnit, name: e.target.value })
+                          }
+                          onKeyDown={(e) => e.key === "Enter" && handleUpdateUnit()}
+                          className="bg-gray-800 border-gray-700 flex-1 h-8"
+                          autoFocus
+                        />
+                        <Button size="sm" onClick={handleUpdateUnit} className="h-8 bg-amber-600">
+                          Lưu
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingUnit(null)} className="h-8">
+                          Hủy
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="flex-1 text-sm">{unit.name}</span>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setEditingUnit(unit)}
+                          className="h-8 w-8 p-0 text-gray-400 hover:text-white"
+                        >
+                          <Pencil size={14} />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeleteUnit(unit.id)}
+                          className="h-8 w-8 p-0 text-red-400 hover:text-red-300"
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                ))}
+                {units.length === 0 && (
+                  <p className="text-center text-gray-500 text-sm py-4">
+                    Chưa có đơn vị nào
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
       
       {/* PWA Install Button / Instructions */}
       {!isInstalled && (
@@ -303,7 +443,7 @@ export default function SettingsPage() {
         className="text-center text-xs text-gray-600 cursor-help"
         onClick={() => setShowDebug(!showDebug)}
       >
-        Le Farm - Bill App v1.2.1 (IndexedDB)
+        Le Farm - Bill App v1.3.0 (D1 Cloud)
       </p>
     </div>
   );
