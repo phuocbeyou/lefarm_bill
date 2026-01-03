@@ -184,9 +184,10 @@ export default function BillPage() {
     const bankBin = settings.bankBin || "970422";
     if (!settings.accountNumber) return "";
     
-    const description = `TT ${customerName || "KH"} ${orderCode || ""}`.trim().slice(0, 25);
-    const amount = total > 0 ? `&amount=${total}` : "";
-    return `https://img.vietqr.io/image/${bankBin}-${settings.accountNumber}-compact2.png?${amount}&addInfo=${encodeURIComponent(description)}&accountName=${encodeURIComponent(settings.accountName)}`;
+    const description = customerName || "";
+    const amount = total > 0 ? `amount=${total}` : "";
+    const params = [amount, `addInfo=${encodeURIComponent(description)}`, `accountName=${encodeURIComponent(settings.accountName)}`].filter(Boolean).join("&");
+    return `https://img.vietqr.io/image/${bankBin}-${settings.accountNumber}-cdHGLoP.png?${params}`;
   };
 
   const qrCodeUrl = generateVietQRUrl();
@@ -498,7 +499,7 @@ export default function BillPage() {
               </div>
               <div className="bg-white p-3 rounded-2xl shadow-inner border border-gray-100">
                 {qrCodeUrl ? (
-                  <img src={qrCodeUrl} alt="VietQR" className="w-40 h-40 object-contain" />
+                  <img src={qrCodeUrl} alt="VietQR" className="w-52 h-52 object-contain" />
                 ) : (
                   <div className="w-40 h-40 flex items-center justify-center text-gray-300">
                     <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
@@ -675,7 +676,7 @@ export default function BillPage() {
             </div>
             {qrCodeUrl && (
               <div style={{ textAlign: "center" }}>
-                <img src={qrCodeUrl} alt="QR" style={{ width: "110px", height: "110px" }} />
+                <img src={qrCodeUrl} alt="QR" style={{ width: "140px", height: "140px" }} />
                 <p style={{ fontSize: "10px", color: "#888888", margin: "5px 0 0 0" }}>Quét QR để thanh toán</p>
               </div>
             )}

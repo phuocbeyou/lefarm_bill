@@ -97,7 +97,7 @@ export default function SettingsPage() {
 
   // Preview VietQR
   const previewQRUrl = settings.accountNumber && settings.bankBin
-    ? `https://img.vietqr.io/image/${settings.bankBin}-${settings.accountNumber}-compact2.png?amount=100000&addInfo=Test&accountName=${encodeURIComponent(settings.accountName)}`
+    ? `https://img.vietqr.io/image/${settings.bankBin}-${settings.accountNumber}-cdHGLoP.png?amount=100000&addInfo=Ten%20Khach%20Hang&accountName=${encodeURIComponent(settings.accountName)}`
     : "";
 
   if (loading) {
