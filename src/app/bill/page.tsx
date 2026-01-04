@@ -580,131 +580,106 @@ export default function BillPage() {
           style={{ 
             width: "600px", 
             backgroundColor: "#ffffff", 
-            fontFamily: "'Segoe UI', Arial, sans-serif",
-            color: "#333333"
+            fontFamily: "'Times New Roman', serif",
+            color: "#333333",
+            padding: "25px 30px"
           }}
         >
-          {/* Header */}
-          <div style={{ padding: "30px 30px 20px 30px" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <img src="/logo.jpg" alt="Logo" style={{ width: "50px", height: "50px", borderRadius: "50%", objectFit: "cover" }} />
-                <div>
-                  <h1 style={{ fontSize: "18px", fontWeight: 700, color: "#8B4513", margin: 0 }}>{settings.shopName}</h1>
-                  <p style={{ fontSize: "11px", color: "#666666", margin: "3px 0 0 0" }}>{settings.shopAddress}</p>
-                </div>
-              </div>
-              <div style={{ textAlign: "right" }}>
-                <p style={{ fontSize: "11px", color: "#666666", margin: "0" }}>Ngày: <strong>{today}</strong></p>
-                <p style={{ fontSize: "11px", color: "#666666", margin: "3px 0 0 0" }}>Mã: <strong>{orderCode || "---"}</strong></p>
-              </div>
+          {/* Header Divider - TOP */}
+          <div style={{ height: "4px", backgroundColor: "#283497", marginBottom: "20px" }}></div>
+
+          {/* Header - Logo + Shop Info */}
+          <div style={{ display: "flex", alignItems: "center", gap: "15px", marginBottom: "20px" }}>
+            <img src="/logo.jpg" alt="Logo" style={{ width: "70px", height: "70px", borderRadius: "8px", objectFit: "cover" }} />
+            <div>
+              <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#C6893F", margin: 0, fontFamily: "'Times New Roman', serif" }}>{settings.shopName}</h1>
+              <p style={{ fontSize: "13px", color: "#333", margin: "5px 0 2px 0" }}>Địa chỉ: {settings.shopAddress}</p>
+              <p style={{ fontSize: "13px", color: "#333", margin: 0 }}>SĐT: {settings.shopPhone}</p>
             </div>
+          </div>
 
-            {/* Title */}
-            <h2 style={{ 
-              fontSize: "28px", 
-              fontWeight: 700, 
-              color: "#dc2626", 
-              textAlign: "center", 
-              margin: "25px 0 20px 0",
-              letterSpacing: "2px"
-            }}>
-              HÓA ĐƠN BÁN HÀNG
-            </h2>
+          {/* Title & Date */}
+          <div style={{ marginBottom: "15px" }}>
+            <h2 style={{ fontSize: "22px", fontWeight: 700, color: "#283497", margin: 0, fontFamily: "'Times New Roman', serif" }}>Phiếu bán hàng</h2>
+            <p style={{ fontSize: "14px", color: "#d63384", margin: "5px 0 0 0", fontWeight: 600 }}>{today}</p>
+          </div>
 
-            {/* Customer & Bank Info */}
-            <div style={{ display: "flex", gap: "40px", marginBottom: "20px" }}>
-              <div style={{ flex: 1 }}>
-                <p style={{ fontSize: "12px", color: "#666666", margin: "0 0 3px 0" }}>
-                  <strong style={{ color: "#333" }}>Khách hàng:</strong> {customerName || "---"}
-                </p>
-                <p style={{ fontSize: "12px", color: "#666666", margin: "0 0 3px 0" }}>
-                  <strong style={{ color: "#333" }}>SĐT:</strong> {customerPhone || "---"}
-                </p>
-                <p style={{ fontSize: "12px", color: "#666666", margin: "0" }}>
-                  <strong style={{ color: "#333" }}>Địa chỉ:</strong> {customerAddress || "---"}
-                </p>
-              </div>
-              <div style={{ flex: 1, textAlign: "right" }}>
-                <p style={{ fontSize: "12px", color: "#666666", margin: "0 0 3px 0" }}>
-                  <strong style={{ color: "#333" }}>Hotline:</strong> {settings.shopPhone}
-                </p>
-              </div>
+          {/* Customer Info - 2 columns with box */}
+          <div style={{ display: "flex", marginBottom: "20px", paddingBottom: "15px" }}>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: "13px", color: "#333", margin: "0 0 3px 0", fontWeight: 700 }}>Khách hàng</p>
+              <p style={{ fontSize: "13px", color: "#333", margin: "0 0 8px 0" }}>{customerName || ""}</p>
+              <p style={{ fontSize: "13px", color: "#333", margin: "0 0 3px 0", fontWeight: 700 }}>Địa chỉ</p>
+              <p style={{ fontSize: "13px", color: "#333", margin: 0 }}>{customerAddress || ""}</p>
+            </div>
+            <div style={{ flex: 1, paddingLeft: "20px" }}>
+              <p style={{ fontSize: "13px", color: "#333", margin: "0 0 3px 0", fontWeight: 700 }}>SĐT</p>
+              <p style={{ fontSize: "13px", color: "#333", margin: "0 0 8px 0" }}>{customerPhone || ""}</p>
+              <p style={{ fontSize: "13px", color: "#333", margin: "0 0 3px 0", fontWeight: 700 }}>Mã đơn hàng:</p>
+              <p style={{ fontSize: "13px", color: "#333", margin: 0 }}>{orderCode || ""}</p>
             </div>
           </div>
 
           {/* Product Table */}
-          <div style={{ padding: "0 30px" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr style={{ backgroundColor: "#8B4513" }}>
-                  <th style={{ padding: "12px 8px", textAlign: "center", fontSize: "12px", fontWeight: 600, color: "#ffffff", width: "40px" }}>STT</th>
-                  <th style={{ padding: "12px 8px", textAlign: "left", fontSize: "12px", fontWeight: 600, color: "#ffffff" }}>SẢN PHẨM</th>
-                  <th style={{ padding: "12px 8px", textAlign: "center", fontSize: "12px", fontWeight: 600, color: "#ffffff", width: "60px" }}>SL</th>
-                  <th style={{ padding: "12px 8px", textAlign: "right", fontSize: "12px", fontWeight: 600, color: "#ffffff", width: "90px" }}>ĐƠN GIÁ</th>
-                  <th style={{ padding: "12px 8px", textAlign: "right", fontSize: "12px", fontWeight: 600, color: "#ffffff", width: "100px" }}>THÀNH TIỀN</th>
+          <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "10px", borderTop: "2px solid #283497" }}>
+            <thead>
+              <tr>
+                <th style={{ padding: "5px", textAlign: "center", verticalAlign: "middle", fontSize: "13px", fontWeight: 700, color: "#283497", width: "40px" }}>STT</th>
+                <th style={{ padding: "5px", textAlign: "left", verticalAlign: "middle", fontSize: "13px", fontWeight: 700, color: "#283497" }}>Sản phẩm</th>
+                <th style={{ padding: "5px", textAlign: "center", verticalAlign: "middle", fontSize: "13px", fontWeight: 700, color: "#283497", width: "70px" }}>Số lượng</th>
+                <th style={{ padding: "5px", textAlign: "center", verticalAlign: "middle", fontSize: "13px", fontWeight: 700, color: "#283497", width: "50px" }}>ĐVT</th>
+                <th style={{ padding: "5px", textAlign: "right", verticalAlign: "middle", fontSize: "13px", fontWeight: 700, color: "#283497", width: "90px" }}>Đơn giá</th>
+                <th style={{ padding: "5px", textAlign: "right", verticalAlign: "middle", fontSize: "13px", fontWeight: 700, color: "#283497", width: "90px" }}>Số tiền</th>
+              </tr>
+            </thead>
+            <tbody>
+              {validItems.map((item, idx) => (
+                <tr key={item.id} style={{ backgroundColor: idx % 2 === 0 ? "#ffffff" : "#f5f5f5" }}>
+                  <td style={{ padding: "8px 5px", fontSize: "13px", color: "#333", textAlign: "center" }}>{idx + 1}</td>
+                  <td style={{ padding: "8px 5px", fontSize: "13px", color: "#333" }}>{item.productName}</td>
+                  <td style={{ padding: "8px 5px", fontSize: "13px", color: "#333", textAlign: "center" }}>{item.quantity}</td>
+                  <td style={{ padding: "8px 5px", fontSize: "13px", color: "#333", textAlign: "center" }}>{item.unit}</td>
+                  <td style={{ padding: "8px 5px", fontSize: "13px", color: "#333", textAlign: "right" }}>{item.price.toLocaleString('de-DE')} đ</td>
+                  <td style={{ padding: "8px 5px", fontSize: "13px", color: "#333", textAlign: "right" }}>{(item.price * item.quantity).toLocaleString('de-DE')} đ</td>
                 </tr>
-              </thead>
-              <tbody>
-                {validItems.map((item, idx) => (
-                  <tr key={item.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
-                    <td style={{ padding: "12px 8px", fontSize: "13px", color: "#666666", textAlign: "center" }}>{idx + 1}</td>
-                    <td style={{ padding: "12px 8px", fontSize: "13px", color: "#333333", fontWeight: 500 }}>{item.productName}</td>
-                    <td style={{ padding: "12px 8px", fontSize: "13px", color: "#666666", textAlign: "center" }}>{item.quantity} {item.unit}</td>
-                    <td style={{ padding: "12px 8px", fontSize: "13px", color: "#666666", textAlign: "right" }}>{item.price.toLocaleString()}</td>
-                    <td style={{ padding: "12px 8px", fontSize: "13px", color: "#dc2626", textAlign: "right", fontWeight: 600 }}>{(item.price * item.quantity).toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              ))}
+            </tbody>
+          </table>
 
-            {/* Totals */}
-            <div style={{ marginTop: "15px", borderTop: "2px solid #8B4513", paddingTop: "15px" }}>
-              <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                <div style={{ width: "250px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
-                    <span style={{ fontSize: "13px", color: "#666666" }}>Tạm tính:</span>
-                    <span style={{ fontSize: "13px", color: "#333333" }}>{subtotal.toLocaleString()}đ</span>
-                  </div>
-                  {discount > 0 && (
-                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
-                      <span style={{ fontSize: "13px", color: "#666666" }}>Giảm giá:</span>
-                      <span style={{ fontSize: "13px", color: "#8B4513" }}>-{discount.toLocaleString()}đ</span>
-                    </div>
-                  )}
-                  <div style={{ display: "flex", justifyContent: "space-between", paddingTop: "8px", borderTop: "1px solid #e5e7eb" }}>
-                    <span style={{ fontSize: "16px", fontWeight: 700, color: "#333333" }}>TỔNG CỘNG:</span>
-                    <span style={{ fontSize: "18px", fontWeight: 700, color: "#dc2626" }}>{total.toLocaleString()}đ</span>
-                  </div>
-                </div>
+          {/* Totals */}
+          <div style={{ paddingTop: "10px", marginBottom: "25px" }}>
+            {discount > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "5px" }}>
+                <span style={{ fontSize: "13px", color: "#283497", fontWeight: 600 }}>Giảm giá</span>
+                <span style={{ fontSize: "13px", color: "#333" }}></span>
               </div>
+            )}
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span style={{ fontSize: "14px", color: "#283497", fontWeight: 700 }}>Thành tiền</span>
+              <span style={{ fontSize: "16px", color: "#d63384", fontWeight: 700 }}>{total.toLocaleString('de-DE')} đ</span>
             </div>
           </div>
 
-          {/* Thank You & QR Section */}
-          <div style={{ padding: "25px 30px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          {/* Bank Transfer & QR Section */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" }}>
             <div>
-              <p style={{ fontSize: "24px", fontStyle: "italic", color: "#8B4513", margin: "0", fontFamily: "cursive" }}>
-                Cảm ơn quý khách!
-              </p>
-              <div style={{ marginTop: "15px", fontSize: "12px", color: "#666666" }}>
-                <p style={{ margin: "0 0 3px 0" }}><strong>STK:</strong> {settings.accountNumber}</p>
-                <p style={{ margin: "0 0 3px 0" }}><strong>Tên TK:</strong> {settings.accountName}</p>
-                <p style={{ margin: "0" }}><strong>Ngân hàng:</strong> {settings.bankName}</p>
-              </div>
+              <p style={{ fontSize: "15px", color: "#283497", fontWeight: 700, margin: "0 0 12px 0", fontStyle: "italic" }}>Thông tin chuyển khoản:</p>
+              <p style={{ fontSize: "13px", color: "#333", margin: "0 0 5px 0" }}><strong>STK:</strong> {settings.accountNumber}</p>
+              <p style={{ fontSize: "13px", color: "#333", margin: "0 0 5px 0" }}><strong>Tên TK:</strong> {settings.accountName}</p>
+              <p style={{ fontSize: "13px", color: "#333", margin: "0" }}><strong>Ngân hàng Quân Đội - {settings.bankName}</strong></p>
             </div>
             {qrCodeUrl && (
               <div style={{ textAlign: "center" }}>
-                <img src={qrCodeUrl} alt="QR" style={{ width: "140px", height: "140px" }} />
-                <p style={{ fontSize: "10px", color: "#888888", margin: "5px 0 0 0" }}>Quét QR để thanh toán</p>
+                <img src={qrCodeUrl} alt="QR" style={{ width: "150px", height: "150px" }} />
+                <p style={{ fontSize: "11px", color: "#333", margin: "8px 0 0 0" }}>Thanh toán nhanh hơn với mã QR</p>
               </div>
             )}
           </div>
 
-          {/* Footer */}
-          <div style={{ backgroundColor: "#8B4513", padding: "12px 30px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <p style={{ fontSize: "11px", color: "#ffffff", margin: 0 }}>📞 {settings.shopPhone}</p>
-            <p style={{ fontSize: "12px", color: "#ffffff", margin: 0, fontWeight: 600 }}>{settings.shopName.toUpperCase()}</p>
+          {/* Footer Notes */}
+          <div style={{ fontSize: "11px", color: "#666", paddingTop: "12px" }}>
+            <p style={{ margin: "0 0 3px 0" }}>*Nếu quý chọn thanh toán khi nhận hàng vui lòng bỏ qua thông tin chuyển khoản này</p>
+            <p style={{ margin: "0" }}>*Quét mã QR để thanh toán nhanh hơn (QR đã bao gồm số tiền và nội dung thanh toán)</p>
           </div>
         </div>
       </div>
