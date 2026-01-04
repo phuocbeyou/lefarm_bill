@@ -671,13 +671,13 @@ export default function BillPage() {
             {qrCodeUrl && (
               <div style={{ textAlign: "center" }}>
                 <img src={qrCodeUrl} alt="QR" style={{ width: "150px", height: "150px" }} />
-                <p style={{ fontSize: "11px", color: "#333", margin: "8px 0 0 0" }}>Thanh toán nhanh hơn với mã QR</p>
+                <p style={{ fontSize: "9px", color: "#333", margin: "8px 0 0 0" }}>Thanh toán nhanh hơn với mã QR</p>
               </div>
             )}
           </div>
 
           {/* Footer Notes */}
-          <div style={{ fontSize: "11px", color: "#666", paddingTop: "12px" }}>
+          <div style={{ fontSize: "9px", color: "#666", paddingTop: "12px" }}>
             <p style={{ margin: "0 0 3px 0" }}>*Nếu quý chọn thanh toán khi nhận hàng vui lòng bỏ qua thông tin chuyển khoản này</p>
             <p style={{ margin: "0" }}>*Quét mã QR để thanh toán nhanh hơn (QR đã bao gồm số tiền và nội dung thanh toán)</p>
           </div>
