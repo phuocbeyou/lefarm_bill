@@ -17,7 +17,25 @@ import {
   Unit
 } from "@/lib/db";
 import { usePWA } from "@/hooks/usePWA";
-import { Download, ChevronDown, ChevronUp, Plus, Pencil, Trash2 } from "lucide-react";
+import { 
+  Download, 
+  ChevronDown, 
+  ChevronUp, 
+  Plus, 
+  Pencil, 
+  Trash2, 
+  CheckCircle2, 
+  Star,
+  Building2
+} from "lucide-react";
+import { 
+  getAllBankAccounts, 
+  addBankAccount, 
+  updateBankAccount, 
+  deleteBankAccount, 
+  setDefaultBankAccount,
+  BankAccount
+} from "@/lib/db";
 
 // VietQR bank list with BIN codes
 const bankList = [
@@ -63,19 +81,33 @@ export default function SettingsPage() {
   const [newUnitName, setNewUnitName] = useState("");
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null);
 
+  // Bank accounts state
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [showBankAccounts, setShowBankAccounts] = useState(false);
+  const [isAddingBank, setIsAddingBank] = useState(false);
+  const [editingBank, setEditingBank] = useState<BankAccount | null>(null);
+  const [newBank, setNewBank] = useState<Omit<BankAccount, 'id' | 'isDefault'>>({
+    bankName: "MB Bank",
+    bankBin: "970422",
+    accountNumber: "",
+    accountName: "",
+  });
+
   useEffect(() => {
     const loadSettings = async () => {
       try {
         await migrateFromLocalStorage();
         await initDefaultSettings();
-        const [data, unitsData] = await Promise.all([
+        const [data, unitsData, bankData] = await Promise.all([
           getSettings(),
           getAllUnits(),
+          getAllBankAccounts(),
         ]);
         if (data) {
           setSettings(data);
         }
         setUnits(unitsData);
+        setBankAccounts(bankData);
       } catch (error) {
         console.error("Error loading settings:", error);
       } finally {
@@ -141,6 +173,88 @@ export default function SettingsPage() {
       console.error("Error deleting unit:", error);
     }
   };
+
+  // Bank accounts handlers
+  const handleAddBank = async () => {
+    if (!newBank.accountNumber || !newBank.accountName) return;
+    try {
+      const added = await addBankAccount({ ...newBank, isDefault: bankAccounts.length === 0 ? 1 : 0 });
+      setBankAccounts([...bankAccounts, added]);
+      setNewBank({
+        bankName: "MB Bank",
+        bankBin: "970422",
+        accountNumber: "",
+        accountName: "",
+      });
+      setIsAddingBank(false);
+      
+      // If first bank account, it becomes default and updates settings
+      if (bankAccounts.length === 0) {
+        const updatedSettings = await getSettings();
+        if (updatedSettings) setSettings(updatedSettings);
+      }
+    } catch (error) {
+      console.error("Error adding bank account:", error);
+    }
+  };
+
+  const handleUpdateBank = async () => {
+    if (!editingBank || !editingBank.accountNumber || !editingBank.accountName) return;
+    try {
+      await updateBankAccount(editingBank);
+      setBankAccounts(bankAccounts.map(b => b.id === editingBank.id ? editingBank : b));
+      setEditingBank(null);
+      
+      // If this was the default account, refresh settings
+      if (editingBank.isDefault === 1) {
+        const updatedSettings = await getSettings();
+        if (updatedSettings) setSettings(updatedSettings);
+      }
+    } catch (error) {
+      console.error("Error updating bank account:", error);
+    }
+  };
+
+  const handleDeleteBank = async (id: string) => {
+    if (!confirm("Bạn có chắc chắn muốn xoá tài khoản này?")) return;
+    try {
+      await deleteBankAccount(id);
+      setBankAccounts(bankAccounts.filter(b => b.id !== id));
+    } catch (error) {
+      console.error("Error deleting bank account:", error);
+    }
+  };
+
+  const handleSetDefaultBank = async (id: string) => {
+    try {
+      await setDefaultBankAccount(id);
+      setBankAccounts(bankAccounts.map(b => ({
+        ...b,
+        isDefault: b.id === id ? 1 : 0
+      })));
+      
+      // Refresh settings to show the new default bank
+      const updatedSettings = await getSettings();
+      if (updatedSettings) setSettings(updatedSettings);
+    } catch (error) {
+      console.error("Error setting default bank account:", error);
+    }
+  };
+
+  const handleNewBankSelect = (bankName: string) => {
+    const bank = bankList.find((b) => b.name === bankName);
+    if (bank) {
+      setNewBank(prev => ({ ...prev, bankName: bank.name, bankBin: bank.bin }));
+    }
+  };
+
+  const handleEditingBankSelect = (bankName: string) => {
+    const bank = bankList.find((b) => b.name === bankName);
+    if (bank && editingBank) {
+      setEditingBank({ ...editingBank, bankName: bank.name, bankBin: bank.bin });
+    }
+  };
+ 
 
   // Preview VietQR
   const previewQRUrl = settings.accountNumber && settings.bankBin
@@ -223,47 +337,34 @@ export default function SettingsPage() {
             </svg>
             VietQR - Thanh toán
           </h2>
-
+ 
           <p className="text-xs text-gray-400">
-            Sử dụng VietQR để tự động tạo mã QR thanh toán với số tiền và nội dung
+            Sử dụng VietQR để tự động tạo mã QR thanh toán với số tiền và nội dung. Tài khoản đang sử dụng sẽ được lấy từ danh sách phía dưới.
           </p>
-
+ 
           <div className="space-y-3">
-            <div className="space-y-1">
-              <label className="text-sm text-gray-400">Ngân hàng</label>
-              <select
-                value={settings.bankName}
-                onChange={(e) => handleBankSelect(e.target.value)}
-                className="w-full p-2 bg-gray-800 border border-gray-700 rounded-md text-white"
-              >
-                {bankList.map((bank) => (
-                  <option key={bank.bin} value={bank.name}>
-                    {bank.name}
-                  </option>
-                ))}
-              </select>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-xs text-gray-400">Ngân hàng</label>
+                <div className="p-2 bg-gray-800 border border-gray-700 rounded-md text-white font-medium">
+                  {settings.bankName || "Chưa chọn"}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs text-gray-400">Số tài khoản</label>
+                <div className="p-2 bg-gray-800 border border-gray-700 rounded-md text-white font-mono">
+                  {settings.accountNumber || "Chưa có"}
+                </div>
+              </div>
             </div>
-
+ 
             <div className="space-y-1">
-              <label className="text-sm text-gray-400">Số tài khoản</label>
-              <Input
-                placeholder="VD: 0988885192"
-                value={settings.accountNumber}
-                onChange={(e) => handleChange("accountNumber", e.target.value)}
-                className="bg-gray-800 border-gray-700"
-              />
+              <label className="text-xs text-gray-400">Tên chủ tài khoản</label>
+              <div className="p-2 bg-gray-800 border border-gray-700 rounded-md text-white font-bold uppercase">
+                {settings.accountName || "Chưa có"}
+              </div>
             </div>
-
-            <div className="space-y-1">
-              <label className="text-sm text-gray-400">Tên chủ tài khoản (không dấu, viết hoa)</label>
-              <Input
-                placeholder="VD: PHAM THI HONG NHUNG"
-                value={settings.accountName}
-                onChange={(e) => handleChange("accountName", e.target.value.toUpperCase())}
-                className="bg-gray-800 border-gray-700"
-              />
-            </div>
-
+ 
             {/* QR Preview */}
             {previewQRUrl && (
               <div className="space-y-2">
@@ -277,7 +378,185 @@ export default function SettingsPage() {
                 </div>
               </div>
             )}
+            
+            <p className="text-[10px] text-amber-500/70 italic text-center">
+              * Để thay đổi tài khoản, vui lòng chọn từ danh sách tài khoản phía dưới.
+            </p>
           </div>
+        </CardContent>
+      </Card>
+ 
+      {/* Bank Accounts Management */}
+      <Card className="bg-gray-900 border-gray-800">
+        <CardContent className="p-4">
+          <button
+            onClick={() => setShowBankAccounts(!showBankAccounts)}
+            className="w-full flex items-center justify-between"
+          >
+            <h2 className="font-semibold text-white flex items-center gap-2">
+              <Star size={20} className="text-amber-500" />
+              Danh sách tài khoản (STK)
+            </h2>
+            {showBankAccounts ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+          </button>
+ 
+          {showBankAccounts && (
+            <div className="mt-4 space-y-4">
+              {/* Add new bank account button */}
+              {!isAddingBank && !editingBank && (
+                <Button 
+                  onClick={() => setIsAddingBank(true)}
+                  className="w-full bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-300 gap-2"
+                >
+                  <Plus size={16} /> Thêm tài khoản mới
+                </Button>
+              )}
+ 
+              {/* Add/Edit Form */}
+              {(isAddingBank || editingBank) && (
+                <div className="p-3 bg-gray-800/30 rounded-lg border border-gray-700 space-y-3">
+                  <h3 className="text-sm font-medium text-amber-500 font-bold">
+                    {editingBank ? "SỬA TÀI KHOẢN" : "THÊM TÀI KHOẢN MỚI"}
+                  </h3>
+                  
+                  <div className="space-y-2">
+                    <div className="space-y-1">
+                      <label className="text-xs text-gray-400">Ngân hàng</label>
+                      <select
+                        value={editingBank ? editingBank.bankName : newBank.bankName}
+                        onChange={(e) => editingBank ? handleEditingBankSelect(e.target.value) : handleNewBankSelect(e.target.value)}
+                        className="w-full p-2 bg-gray-900 border border-gray-700 rounded-md text-white text-sm"
+                      >
+                        {bankList.map((bank) => (
+                          <option key={bank.bin} value={bank.name}>
+                            {bank.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+ 
+                    <div className="space-y-1">
+                      <label className="text-xs text-gray-400">Số tài khoản</label>
+                      <Input
+                        placeholder="VD: 0988885192"
+                        value={editingBank ? editingBank.accountNumber : newBank.accountNumber}
+                        onChange={(e) => editingBank 
+                          ? setEditingBank({...editingBank, accountNumber: e.target.value}) 
+                          : setNewBank({...newBank, accountNumber: e.target.value})}
+                        className="bg-gray-900 border-gray-700 h-9 text-sm"
+                      />
+                    </div>
+ 
+                    <div className="space-y-1">
+                      <label className="text-xs text-gray-400">Tên chủ TK (không dấu)</label>
+                      <Input
+                        placeholder="VD: PHAM THI HONG NHUNG"
+                        value={editingBank ? editingBank.accountName : newBank.accountName}
+                        onChange={(e) => {
+                          const val = e.target.value.toUpperCase();
+                          editingBank 
+                            ? setEditingBank({...editingBank, accountName: val}) 
+                            : setNewBank({...newBank, accountName: val})
+                        }}
+                        className="bg-gray-900 border-gray-700 h-9 text-sm"
+                      />
+                    </div>
+                  </div>
+ 
+                  <div className="flex gap-2">
+                    <Button 
+                      className="flex-1 bg-amber-600 hover:bg-amber-500 text-white h-9 text-sm font-bold"
+                      onClick={editingBank ? handleUpdateBank : handleAddBank}
+                    >
+                      {editingBank ? "LƯU" : "THÊM"}
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      className="flex-1 h-9 text-sm"
+                      onClick={() => {
+                        setIsAddingBank(false);
+                        setEditingBank(null);
+                      }}
+                    >
+                      Hủy
+                    </Button>
+                  </div>
+                </div>
+              )}
+ 
+              {/* Accounts List */}
+              <div className="space-y-2">
+                {bankAccounts.map((bank) => (
+                  <div
+                    key={bank.id}
+                    onClick={() => bank.isDefault === 0 && handleSetDefaultBank(bank.id)}
+                    className={`p-3 rounded-lg border transition-all duration-200 ${
+                      bank.isDefault 
+                        ? "bg-amber-900/20 border-amber-500/50" 
+                        : "bg-gray-800/50 border-gray-700 hover:border-amber-500/30 hover:bg-gray-800 cursor-pointer"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex gap-3">
+                        <div className={`p-2 rounded-md ${bank.isDefault ? "bg-amber-500/20 text-amber-500" : "bg-gray-700 text-gray-400"}`}>
+                          <Building2 size={18} />
+                        </div>
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm text-white">{bank.bankName}</span>
+                            {bank.isDefault === 1 && (
+                              <span className="text-[10px] bg-amber-600 px-1.5 py-0.5 rounded text-white font-bold">MẶC ĐỊNH</span>
+                            )}
+                          </div>
+                          <p className="text-sm font-mono text-gray-300">{bank.accountNumber}</p>
+                          <p className="text-[10px] text-gray-500 font-bold">{bank.accountName}</p>
+                        </div>
+                      </div>
+                      
+                      <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                        {bank.isDefault === 0 ? (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleSetDefaultBank(bank.id)}
+                            className="h-8 w-8 p-0 text-gray-400 hover:text-amber-500"
+                            title="Đặt làm mặc định"
+                          >
+                            <Star size={16} />
+                          </Button>
+                        ) : (
+                          <div className="h-8 w-8 flex items-center justify-center text-amber-500">
+                            <Star size={16} fill="currentColor" />
+                          </div>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setEditingBank(bank)}
+                          className="h-8 w-8 p-0 text-gray-400 hover:text-white"
+                        >
+                          <Pencil size={14} />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleDeleteBank(bank.id)}
+                          className="h-8 w-8 p-0 text-red-500/70 hover:text-red-400"
+                        >
+                          <Trash2 size={14} />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {bankAccounts.length === 0 && !isAddingBank && (
+                  <p className="text-center text-gray-500 text-sm py-4 italic">
+                    Chưa có tài khoản nào được lưu
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

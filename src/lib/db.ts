@@ -34,8 +34,18 @@ export interface Settings {
   accountName: string;
 }
 
+export interface BankAccount {
+  id: string;
+  bankName: string;
+  bankBin: string;
+  accountNumber: string;
+  accountName: string;
+  isDefault: number;
+}
+
 // API Base URL
 const API_URL = "https://space-le-farm-api.phuocph1903.workers.dev";
+// const API_URL = "http://localhost:8787";
 
 // Helper for API calls
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
@@ -181,6 +191,38 @@ export async function initDefaultSettings(): Promise<void> {
 export async function migrateFromLocalStorage(): Promise<void> {
   // Migration is not needed for cloud database
   return;
+}
+
+// ============ BANK ACCOUNTS ============
+
+export async function getAllBankAccounts(): Promise<BankAccount[]> {
+  return fetchAPI<BankAccount[]>("/api/bank-accounts");
+}
+
+export async function addBankAccount(account: Omit<BankAccount, "id">): Promise<BankAccount> {
+  return fetchAPI<BankAccount>("/api/bank-accounts", {
+    method: "POST",
+    body: JSON.stringify(account),
+  });
+}
+
+export async function updateBankAccount(account: BankAccount): Promise<void> {
+  await fetchAPI<BankAccount>(`/api/bank-accounts/${account.id}`, {
+    method: "PUT",
+    body: JSON.stringify(account),
+  });
+}
+
+export async function deleteBankAccount(id: string): Promise<void> {
+  await fetchAPI<{ success: boolean }>(`/api/bank-accounts/${id}`, {
+    method: "DELETE",
+  });
+}
+
+export async function setDefaultBankAccount(id: string): Promise<void> {
+  await fetchAPI<{ success: boolean }>(`/api/bank-accounts/${id}/default`, {
+    method: "POST",
+  });
 }
 
 // ============ BILLS ============
