@@ -13,9 +13,11 @@ import {
   saveBill,
   migrateFromLocalStorage, 
   initDefaultSettings,
+  getAllBankAccounts,
   Product,
   Settings,
-  Customer
+  Customer,
+  BankAccount
 } from "@/lib/db";
 
 interface BillItem {
@@ -57,6 +59,10 @@ export default function BillPage() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [loading, setLoading] = useState(true);
   
+  // Bank state
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [selectedBankId, setSelectedBankId] = useState<string>("");
+  
   // Autocomplete state
   const [showCustomerSuggestions, setShowCustomerSuggestions] = useState(false);
   const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([]);
@@ -73,16 +79,25 @@ export default function BillPage() {
         await migrateFromLocalStorage();
         await initDefaultSettings();
         
-        const [productsData, settingsData, customersData] = await Promise.all([
+        const [productsData, settingsData, customersData, banksData] = await Promise.all([
           getAllProducts(),
           getSettings(),
           getAllCustomers(),
+          getAllBankAccounts(),
         ]);
         
         setProducts(productsData);
         setCustomers(customersData);
+        setBankAccounts(banksData);
+
         if (settingsData) {
           setSettings(settingsData);
+        }
+
+        // Set default bank if available
+        const defaultBank = banksData.find(b => b.isDefault === 1) || banksData[0];
+        if (defaultBank) {
+          setSelectedBankId(defaultBank.id);
         }
       } catch (error) {
         console.error("Error loading bill data:", error);
@@ -182,13 +197,19 @@ export default function BillPage() {
   const validItems = billItems.filter((item) => item.productId && item.quantity > 0);
 
   const generateVietQRUrl = () => {
-    const bankBin = settings.bankBin || "970422";
-    if (!settings.accountNumber) return "";
+    const selectedBank = bankAccounts.find(b => b.id === selectedBankId);
+    
+    // Use selected bank or fallback to settings
+    const bankBin = selectedBank?.bankBin || settings.bankBin || "970422";
+    const accountNumber = selectedBank?.accountNumber || settings.accountNumber;
+    const accountName = selectedBank?.accountName || settings.accountName;
+
+    if (!accountNumber) return "";
     
     const description = customerName || "";
     const amount = total > 0 ? `amount=${total}` : "";
-    const params = [amount, `addInfo=${encodeURIComponent(description)}`, `accountName=${encodeURIComponent(settings.accountName)}`].filter(Boolean).join("&");
-    return `https://img.vietqr.io/image/${bankBin}-${settings.accountNumber}-cdHGLoP.png?${params}`;
+    const params = [amount, `addInfo=${encodeURIComponent(description)}`, `accountName=${encodeURIComponent(accountName)}`].filter(Boolean).join("&");
+    return `https://img.vietqr.io/image/${bankBin}-${accountNumber}-cdHGLoP.png?${params}`;
   };
 
   const qrCodeUrl = generateVietQRUrl();
@@ -516,6 +537,24 @@ export default function BillPage() {
               <div className="bg-amber-50 text-amber-800 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider">
                 Quét mã để thanh toán
               </div>
+
+              {/* Bank Selection */}
+              <select
+                value={selectedBankId}
+                onChange={(e) => setSelectedBankId(e.target.value)}
+                className="w-full max-w-[240px] p-2 bg-gray-50 border border-amber-100 rounded-lg text-xs font-medium text-amber-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+              >
+                {bankAccounts.length > 0 ? (
+                  bankAccounts.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.bankName} - {b.accountNumber}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">{settings.bankName || "MB Bank"} - {settings.accountNumber}</option>
+                )}
+              </select>
+
               <div className="bg-white p-3 rounded-2xl shadow-inner border border-gray-100">
                 {qrCodeUrl ? (
                   <img src={qrCodeUrl} alt="VietQR" className="w-52 h-52 object-contain" />
@@ -528,8 +567,19 @@ export default function BillPage() {
                 )}
               </div>
               <div className="text-center">
-                <p className="text-sm font-bold text-gray-800">{settings.accountNumber}</p>
-                <p className="text-[10px] text-gray-500 uppercase">{settings.bankName} - {settings.accountName}</p>
+                {(() => {
+                  const currentBank = bankAccounts.find(b => b.id === selectedBankId);
+                  const accountNumber = currentBank?.accountNumber || settings.accountNumber;
+                  const bankName = currentBank?.bankName || settings.bankName;
+                  const accountName = currentBank?.accountName || settings.accountName;
+                  
+                  return (
+                    <>
+                      <p className="text-sm font-bold text-gray-800">{accountNumber}</p>
+                      <p className="text-[10px] text-gray-500 uppercase">{bankName} - {accountName}</p>
+                    </>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -664,9 +714,20 @@ export default function BillPage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "20px" }}>
             <div>
               <p style={{ fontSize: "15px", color: "#283497", fontWeight: 700, margin: "0 0 12px 0", fontStyle: "italic" }}>Thông tin chuyển khoản:</p>
-              <p style={{ fontSize: "13px", color: "#333", margin: "0 0 5px 0" }}><strong>STK:</strong> {settings.accountNumber}</p>
-              <p style={{ fontSize: "13px", color: "#333", margin: "0 0 5px 0" }}><strong>Tên TK:</strong> {settings.accountName}</p>
-              <p style={{ fontSize: "13px", color: "#333", margin: "0" }}><strong>Ngân hàng Quân Đội - {settings.bankName}</strong></p>
+              {(() => {
+                const currentBank = bankAccounts.find(b => b.id === selectedBankId);
+                const accountNumber = currentBank?.accountNumber || settings.accountNumber;
+                const bankName = currentBank?.bankName || settings.bankName;
+                const accountName = currentBank?.accountName || settings.accountName;
+                
+                return (
+                  <>
+                    <p style={{ fontSize: "13px", color: "#333", margin: "0 0 5px 0" }}><strong>STK:</strong> {accountNumber}</p>
+                    <p style={{ fontSize: "13px", color: "#333", margin: "0 0 5px 0" }}><strong>Tên TK:</strong> {accountName}</p>
+                    <p style={{ fontSize: "13px", color: "#333", margin: "0" }}><strong>{bankName}</strong></p>
+                  </>
+                );
+              })()}
             </div>
             {qrCodeUrl && (
               <div style={{ textAlign: "center" }}>
