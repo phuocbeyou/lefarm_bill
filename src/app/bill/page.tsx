@@ -230,8 +230,42 @@ export default function BillPage() {
     setExporting(true);
     setShowExportMenu(false);
 
+    // ponytail: Safari only honors <a download>.click() while user activation is alive,
+    // and silently drops oversized data: URLs. So: render + download FIRST with no network
+    // await in front of it, use a Blob URL instead of toDataURL, save to DB afterwards.
     try {
-      // Save bill to database first
+      const canvas = await html2canvas(exportRef.current, {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true,
+        logging: false,
+        onclone: (clonedDoc) => {
+          const styles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
+          styles.forEach((style) => {
+            if (style.parentNode !== clonedDoc.querySelector('[data-export-template]')?.parentNode) {
+              style.remove();
+            }
+          });
+        },
+      });
+      
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/png")
+      );
+      if (!blob) throw new Error("canvas.toBlob returned null");
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.download = `hoadon_${orderCode || Date.now()}.png`;
+      link.href = url;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (error) {
+      console.error("Export image error:", error);
+    }
+
+    // Separate try: a failed export must not skip saving the bill
+    try {
       await saveBill({
         customerName,
         customerPhone,
@@ -248,31 +282,8 @@ export default function BillPage() {
         discount,
         total,
       });
-
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      
-      const canvas = await html2canvas(exportRef.current, {
-        scale: 2,
-        backgroundColor: "#ffffff",
-        useCORS: true,
-        logging: false,
-        onclone: (clonedDoc) => {
-          const styles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
-          styles.forEach((style) => {
-            if (style.parentNode !== clonedDoc.querySelector('[data-export-template]')?.parentNode) {
-              style.remove();
-            }
-          });
-        },
-      });
-      
-      const imgData = canvas.toDataURL("image/png");
-      const link = document.createElement("a");
-      link.download = `hoadon_${orderCode || Date.now()}.png`;
-      link.href = imgData;
-      link.click();
     } catch (error) {
-      console.error("Export image error:", error);
+      console.error("Save bill error:", error);
     } finally {
       setExporting(false);
     }
