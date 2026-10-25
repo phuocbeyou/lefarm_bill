@@ -6,6 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import QRCode from "qrcode";
 import { 
   getAllProducts, 
   getSettings, 
@@ -42,6 +43,122 @@ const defaultSettings: Settings = {
   accountName: "PHAM THI HONG NHUNG",
 };
 
+function removeVietnameseAccents(str: string): string {
+  return str
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D");
+}
+
+function calculateCRC16(payload: string): string {
+  let crc = 0xffff;
+  const bytes = new TextEncoder().encode(payload);
+  for (let i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i] << 8;
+    for (let j = 0; j < 8; j++) {
+      if ((crc & 0x8000) !== 0) {
+        crc = (crc << 1) ^ 0x1021;
+      } else {
+        crc = crc << 1;
+      }
+    }
+  }
+  crc &= 0xffff;
+  return crc.toString(16).toUpperCase().padStart(4, "0");
+}
+
+function formatTLV(tag: string, value: string): string {
+  const length = new TextEncoder().encode(value).length.toString().padStart(2, "0");
+  return `${tag}${length}${value}`;
+}
+
+function generateVietQRPayload(params: {
+  bankBin: string;
+  accountNumber: string;
+  amount?: number;
+  content?: string;
+}): string {
+  let qr = "000201";
+  qr += formatTLV("01", params.amount && params.amount > 0 ? "12" : "11");
+  const guid = formatTLV("00", "A000000727");
+  const acquirerData = formatTLV("00", params.bankBin) + formatTLV("01", params.accountNumber);
+  const field38_01 = formatTLV("01", acquirerData);
+  const field38_02 = formatTLV("02", "QRIBFTTA");
+  qr += formatTLV("38", guid + field38_01 + field38_02);
+  qr += formatTLV("52", "0000");
+  qr += formatTLV("53", "704");
+  if (params.amount && params.amount > 0) {
+    qr += formatTLV("54", Math.round(params.amount).toString());
+  }
+  qr += formatTLV("58", "VN");
+  if (params.content && params.content.trim()) {
+    const cleanContent = removeVietnameseAccents(params.content.trim());
+    qr += formatTLV("62", formatTLV("08", cleanContent));
+  }
+  qr += "6304";
+  qr += calculateCRC16(qr);
+  return qr;
+}
+
+async function generateVietQRPng(params: {
+  bankBin: string;
+  accountNumber: string;
+  amount?: number;
+  content?: string;
+}): Promise<string> {
+  const payload = generateVietQRPayload(params);
+  return await QRCode.toDataURL(payload, {
+    width: 400,
+    margin: 1,
+    color: {
+      dark: "#000000",
+      light: "#ffffff",
+    },
+    errorCorrectionLevel: "M",
+  });
+}
+
+async function overlayQrOnCanvas(
+  canvas: HTMLCanvasElement,
+  exportContainer: HTMLElement,
+  qrContainer: HTMLElement,
+  qrDataUrl: string
+) {
+  if (!qrDataUrl) return;
+  try {
+    const qrImg = new Image();
+    qrImg.src = qrDataUrl;
+    if (qrImg.decode) {
+      await qrImg.decode();
+    } else {
+      await new Promise((resolve) => {
+        qrImg.onload = resolve;
+      });
+    }
+
+    const containerRect = exportContainer.getBoundingClientRect();
+    const qrRect = qrContainer.getBoundingClientRect();
+
+    const scaleX = canvas.width / containerRect.width;
+    const scaleY = canvas.height / containerRect.height;
+
+    const x = (qrRect.left - containerRect.left) * scaleX;
+    const y = (qrRect.top - containerRect.top) * scaleY;
+    const w = qrRect.width * scaleX;
+    const h = qrRect.height * scaleY;
+
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(x, y, w, h);
+      ctx.drawImage(qrImg, x, y, w, h);
+    }
+  } catch (err) {
+    console.error("overlayQrOnCanvas error:", err);
+  }
+}
+
 export default function BillPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -70,6 +187,8 @@ export default function BillPage() {
 
   const billRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
+  const exportQrContainerRef = useRef<HTMLDivElement>(null);
+  const [qrBase64, setQrBase64] = useState<string>("");
 
   useEffect(() => {
     setToday(new Date().toLocaleDateString("vi-VN"));
@@ -214,6 +333,35 @@ export default function BillPage() {
 
   const qrCodeUrl = generateVietQRUrl();
 
+  useEffect(() => {
+    let isMounted = true;
+    const selectedBank = bankAccounts.find((b) => b.id === selectedBankId);
+    const bankBin = selectedBank?.bankBin || settings.bankBin || "970422";
+    const accountNumber = selectedBank?.accountNumber || settings.accountNumber;
+
+    if (!accountNumber) {
+      setQrBase64("");
+      return;
+    }
+
+    generateVietQRPng({
+      bankBin,
+      accountNumber,
+      amount: total > 0 ? total : undefined,
+      content: customerName || undefined,
+    })
+      .then((dataUrl) => {
+        if (isMounted) {
+          setQrBase64(dataUrl);
+        }
+      })
+      .catch((err) => console.error("VietQR PNG error:", err));
+
+    return () => {
+      isMounted = false;
+    };
+  }, [bankAccounts, selectedBankId, settings, total, customerName]);
+
   const clearBill = () => {
     setBillItems([
       { id: "1", productId: "", productName: "", quantity: 0, unit: "KG", price: 0, availablePrices: [] },
@@ -234,6 +382,22 @@ export default function BillPage() {
     // and silently drops oversized data: URLs. So: render + download FIRST with no network
     // await in front of it, use a Blob URL instead of toDataURL, save to DB afterwards.
     try {
+      let pngData = qrBase64;
+      if (!pngData) {
+        const selectedBank = bankAccounts.find((b) => b.id === selectedBankId);
+        const bankBin = selectedBank?.bankBin || settings.bankBin || "970422";
+        const accountNumber = selectedBank?.accountNumber || settings.accountNumber;
+        if (accountNumber) {
+          pngData = await generateVietQRPng({
+            bankBin,
+            accountNumber,
+            amount: total > 0 ? total : undefined,
+            content: customerName || undefined,
+          });
+          setQrBase64(pngData);
+        }
+      }
+
       const canvas = await html2canvas(exportRef.current, {
         scale: 2,
         backgroundColor: "#ffffff",
@@ -248,6 +412,11 @@ export default function BillPage() {
           });
         },
       });
+
+      // Overlay QR code directly onto the canvas to guarantee it is 100% visible
+      if (exportRef.current && exportQrContainerRef.current && pngData) {
+        await overlayQrOnCanvas(canvas, exportRef.current, exportQrContainerRef.current, pngData);
+      }
       
       const blob = await new Promise<Blob | null>((resolve) =>
         canvas.toBlob(resolve, "image/png")
@@ -295,8 +464,22 @@ export default function BillPage() {
     setShowExportMenu(false);
 
     try {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      
+      let pngData = qrBase64;
+      if (!pngData) {
+        const selectedBank = bankAccounts.find((b) => b.id === selectedBankId);
+        const bankBin = selectedBank?.bankBin || settings.bankBin || "970422";
+        const accountNumber = selectedBank?.accountNumber || settings.accountNumber;
+        if (accountNumber) {
+          pngData = await generateVietQRPng({
+            bankBin,
+            accountNumber,
+            amount: total > 0 ? total : undefined,
+            content: customerName || undefined,
+          });
+          setQrBase64(pngData);
+        }
+      }
+
       const canvas = await html2canvas(exportRef.current, {
         scale: 2,
         backgroundColor: "#ffffff",
@@ -311,6 +494,11 @@ export default function BillPage() {
           });
         },
       });
+
+      // Overlay QR code directly onto the canvas to guarantee it is 100% visible
+      if (exportRef.current && exportQrContainerRef.current && pngData) {
+        await overlayQrOnCanvas(canvas, exportRef.current, exportQrContainerRef.current, pngData);
+      }
       
       const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF({
@@ -568,7 +756,7 @@ export default function BillPage() {
 
               <div className="bg-white p-3 rounded-2xl shadow-inner border border-gray-100">
                 {qrCodeUrl ? (
-                  <img src={qrCodeUrl} alt="VietQR" className="w-52 h-52 object-contain" />
+                  <img src={qrCodeUrl || qrBase64} alt="VietQR" className="w-52 h-52 object-contain" />
                 ) : (
                   <div className="w-40 h-40 flex items-center justify-center text-gray-300">
                     <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round">
@@ -638,6 +826,7 @@ export default function BillPage() {
       <div style={{ position: "fixed", left: "-9999px", top: 0 }}>
         <div 
           ref={exportRef} 
+          data-export-template="true"
           style={{ 
             width: "600px", 
             backgroundColor: "#ffffff", 
@@ -740,9 +929,18 @@ export default function BillPage() {
                 );
               })()}
             </div>
-            {qrCodeUrl && (
+            {(qrBase64 || qrCodeUrl) && (
               <div style={{ textAlign: "center" }}>
-                <img src={qrCodeUrl} alt="QR" style={{ width: "150px", height: "150px" }} />
+                <div 
+                  ref={exportQrContainerRef}
+                  style={{ width: "150px", height: "150px", display: "inline-block" }}
+                >
+                  <img 
+                    src={qrBase64 || qrCodeUrl} 
+                    alt="QR" 
+                    style={{ width: "150px", height: "150px", objectFit: "contain" }} 
+                  />
+                </div>
                 <p style={{ fontSize: "9px", color: "#333", margin: "8px 0 0 0" }}>Thanh toán nhanh hơn với mã QR</p>
               </div>
             )}
