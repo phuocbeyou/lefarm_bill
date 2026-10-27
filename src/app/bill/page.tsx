@@ -51,6 +51,19 @@ function removeVietnameseAccents(str: string): string {
     .replace(/Đ/g, "D");
 }
 
+function toLocalDateInputValue(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatBillDate(dateValue: string): string {
+  if (!dateValue) return "";
+  const [year, month, day] = dateValue.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString("vi-VN");
+}
+
 function calculateCRC16(payload: string): string {
   let crc = 0xffff;
   const bytes = new TextEncoder().encode(payload);
@@ -205,8 +218,8 @@ export default function BillPage() {
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerAddress, setCustomerAddress] = useState("");
   const [orderCode, setOrderCode] = useState("");
+  const [billDate, setBillDate] = useState("");
   const [discount, setDiscount] = useState(0);
-  const [today, setToday] = useState("");
   const [exporting, setExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -226,9 +239,10 @@ export default function BillPage() {
   const exportRef = useRef<HTMLDivElement>(null);
   const [qrBase64, setQrBase64] = useState<string>("");
   const [billThemeNew, setBillThemeNew] = useState(false);
+  const billDateDisplay = formatBillDate(billDate);
 
   useEffect(() => {
-    setToday(new Date().toLocaleDateString("vi-VN"));
+    setBillDate(toLocalDateInputValue(new Date()));
     try { setBillThemeNew(localStorage.getItem("billThemeNew") === "true"); } catch {}
 
     const loadData = async () => {
@@ -423,6 +437,7 @@ export default function BillPage() {
     setCustomerPhone("");
     setCustomerAddress("");
     setOrderCode("");
+    setBillDate(toLocalDateInputValue(new Date()));
     setDiscount(0);
   };
 
@@ -566,13 +581,13 @@ export default function BillPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 p-4 pb-24 sm:p-6">
-      <div className="flex items-end justify-between gap-3">
+      <div className="flex items-end justify-between gap-3 rounded-2xl border border-gray-800 bg-gray-900/80 p-4 shadow-sm sm:p-5">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Bán hàng</p>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-gray-900">Tạo phiếu bán hàng</h1>
-          <p className="mt-1 text-sm text-gray-500">Nhập thông tin đơn hàng, kiểm tra tổng tiền rồi xuất hóa đơn.</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-400">Bán hàng</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-white">Tạo phiếu bán hàng</h1>
+          <p className="mt-1 text-sm text-gray-300">Nhập thông tin đơn hàng, kiểm tra tổng tiền rồi xuất hóa đơn.</p>
         </div>
-        <span className="hidden rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 sm:inline-flex">{today || "Hôm nay"}</span>
+        <span className="hidden rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 sm:inline-flex">{billDateDisplay || "Hôm nay"}</span>
       </div>
       {/* Bill Card - Input Form */}
       <Card className="overflow-hidden rounded-2xl border border-gray-200 bg-white text-gray-800 shadow-sm" ref={billRef}>
@@ -595,7 +610,7 @@ export default function BillPage() {
           <div className="flex items-center justify-between border-b border-gray-100 pb-3">
             <div>
               <h2 className="text-lg font-bold text-gray-900">Thông tin đơn hàng</h2>
-              <p className="mt-0.5 text-xs text-gray-500">Ngày lập: {today}</p>
+              <p className="mt-0.5 text-xs text-gray-500">Ngày lập: {billDateDisplay}</p>
             </div>
             {orderCode && <span className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700">#{orderCode}</span>}
           </div>
@@ -610,7 +625,7 @@ export default function BillPage() {
                   onChange={(e) => handleCustomerNameChange(e.target.value)}
                   onFocus={() => customerName.trim() && setShowCustomerSuggestions(true)}
                   placeholder="Tên khách hàng"
-                  className="h-9 text-sm bg-gray-50 border-gray-200"
+                  className="h-11 text-sm bg-gray-50 border-gray-200 sm:h-10"
                 />
                 {/* Autocomplete Suggestions */}
                 {showCustomerSuggestions && (
@@ -619,7 +634,7 @@ export default function BillPage() {
                       <button
                         key={c.id}
                         onClick={() => selectCustomer(c)}
-                        className="w-full px-3 py-2 text-left hover:bg-amber-50 border-b border-gray-50 last:border-0"
+                        className="w-full min-h-12 px-3 py-2.5 text-left hover:bg-amber-50 border-b border-gray-50 last:border-0"
                       >
                         <p className="text-sm font-medium text-gray-800">{c.name}</p>
                         <p className="text-[10px] text-gray-500">{c.phone}</p>
@@ -632,23 +647,32 @@ export default function BillPage() {
                 value={customerPhone}
                 onChange={(e) => setCustomerPhone(e.target.value)}
                 placeholder="Số điện thoại"
-                className="h-9 text-sm bg-gray-50 border-gray-200"
+                className="h-11 text-sm bg-gray-50 border-gray-200 sm:h-10"
               />
             </div>
             <Input
               value={customerAddress}
               onChange={(e) => setCustomerAddress(e.target.value)}
               placeholder="Địa chỉ"
-              className="h-9 text-sm bg-gray-50 border-gray-200"
+              className="h-11 text-sm bg-gray-50 border-gray-200 sm:h-10"
             />
           </section>
 
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            <label className="block space-y-1">
+              <span className="text-xs font-medium text-gray-500">Ngày hóa đơn</span>
+              <Input
+                type="date"
+                value={billDate}
+                onChange={(e) => setBillDate(e.target.value)}
+                className="h-11 w-full text-sm bg-gray-50 border-gray-200 sm:h-10"
+              />
+            </label>
             <Input
               value={orderCode}
               onChange={(e) => setOrderCode(e.target.value)}
               placeholder="Mã đơn hàng"
-              className="h-9 text-sm bg-gray-50 border-gray-200"
+              className="h-11 text-sm bg-gray-50 border-gray-200 sm:h-10"
             />
             <Input
               type="number"
@@ -663,7 +687,7 @@ export default function BillPage() {
                 setDiscount(Math.min(Math.max(0, enteredDiscount), subtotal));
               }}
               placeholder="Giảm giá (đ)"
-              className="h-9 text-sm bg-gray-50 border-gray-200"
+              className="h-11 text-sm bg-gray-50 border-gray-200 sm:h-10"
             />
           </div>
 
@@ -674,19 +698,19 @@ export default function BillPage() {
                 <h3 className="text-sm font-semibold text-gray-900">Chi tiết sản phẩm</h3>
                 <p className="mt-0.5 text-xs text-gray-500">{validItems.length} sản phẩm trong đơn</p>
               </div>
-              <button onClick={addRow} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100">
+              <button onClick={addRow} className="min-h-11 rounded-lg border border-amber-200 bg-amber-50 px-4 text-sm font-semibold text-amber-800 transition hover:bg-amber-100 active:bg-amber-200">
                 + Thêm dòng
               </button>
             </div>
 
             {billItems.map((item, index) => (
-              <div key={item.id} className="space-y-2.5 rounded-xl border border-gray-200 bg-gray-50/70 p-3 sm:p-4">
+              <div key={item.id} className="space-y-3 rounded-xl border border-gray-200 bg-gray-50/70 p-3 sm:p-4">
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-400 w-4">{index + 1}</span>
                   <select
                     value={item.productId}
                     onChange={(e) => handleProductSelect(item.id, e.target.value)}
-                    className="flex-1 p-2 text-sm border border-gray-200 rounded-lg bg-white"
+                    className="min-h-11 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 sm:min-h-10"
                   >
                     <option value="">-- Chọn sản phẩm --</option>
                     {products.map((p) => (
@@ -694,7 +718,7 @@ export default function BillPage() {
                     ))}
                   </select>
                   {billItems.length > 1 && (
-                    <button onClick={() => deleteRow(item.id)} className="text-red-400 hover:text-red-500 p-1">
+                    <button onClick={() => deleteRow(item.id)} aria-label={`Xóa dòng sản phẩm ${index + 1}`} className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-lg text-red-500 hover:bg-red-50 active:bg-red-100 sm:h-10 sm:w-10">
                       <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="12" cy="12" r="10"/>
                         <line x1="15" y1="9" x2="9" y2="15"/>
@@ -705,23 +729,25 @@ export default function BillPage() {
                 </div>
 
                 {item.productId && (
-                  <div className="space-y-2 pl-6">
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="number"
-                        step="0.1"
-                        min="0"
-                        value={item.quantity || ""}
-                        onChange={(e) => handleQuantityChange(item.id, parseFloat(e.target.value) || 0)}
-                        className="w-20 h-8 text-sm text-center bg-white border-gray-200"
-                        placeholder="SL"
-                      />
-                      <span className="text-xs text-gray-500">{item.unit}</span>
-                      
-                      <div className="flex-1 flex items-center gap-1">
-                        <span className="text-xs text-gray-400">×</span>
+                  <div className="space-y-3 pl-6">
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="min-w-0 space-y-1.5">
+                        <span className="block text-xs font-medium text-gray-500">Số lượng ({item.unit})</span>
+                        <Input
+                          type="number"
+                          step="0.1"
+                          min="0"
+                          value={item.quantity || ""}
+                          onChange={(e) => handleQuantityChange(item.id, parseFloat(e.target.value) || 0)}
+                          className="h-11 w-full bg-white text-base text-center border-gray-200 sm:h-10"
+                          placeholder="0"
+                        />
+                      </label>
+
+                      <label className="min-w-0 space-y-1.5">
+                        <span className="block text-xs font-medium text-gray-500">Đơn giá</span>
                         {item.availablePrices.length > 1 ? (
-                          <div className="flex gap-1 items-center">
+                          <div className="space-y-2">
                             <select
                               value={item.availablePrices.includes(item.price) ? item.price : "custom"}
                               onChange={(e) => {
@@ -731,22 +757,23 @@ export default function BillPage() {
                                   handlePriceChange(item.id, Number(e.target.value));
                                 }
                               }}
-                              className="h-8 text-sm border border-gray-200 rounded-md bg-white px-1"
+                              className="h-11 w-full rounded-lg border border-gray-200 bg-white px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 sm:h-10"
                             >
                               {item.availablePrices.map((p) => (
                                 <option key={p} value={p}>
                                   {(p / 1000).toFixed(0)}k
                                 </option>
                               ))}
-                              <option value="custom">Khác...</option>
+                              <option value="custom">Giá khác</option>
                             </select>
                             {!item.availablePrices.includes(item.price) && (
                               <Input
                                 type="number"
+                                min="0"
                                 value={item.price || ""}
                                 onChange={(e) => handlePriceChange(item.id, Number(e.target.value))}
-                                className="w-20 h-8 text-sm bg-white border-gray-200"
-                                placeholder="Giá"
+                                className="h-11 w-full bg-white text-base border-gray-200 sm:h-10"
+                                placeholder="Nhập giá"
                                 autoFocus
                               />
                             )}
@@ -754,17 +781,19 @@ export default function BillPage() {
                         ) : (
                           <Input
                             type="number"
+                            min="0"
                             value={item.price || ""}
                             onChange={(e) => handlePriceChange(item.id, Number(e.target.value))}
-                            className="w-24 h-8 text-sm bg-white border-gray-200"
-                            placeholder="Giá"
+                            className="h-11 w-full bg-white text-base border-gray-200 sm:h-10"
+                            placeholder="Nhập giá"
                           />
                         )}
-                      </div>
+                      </label>
                     </div>
-                    <div className="flex justify-end">
-                      <span className="text-sm font-semibold text-amber-800">
-                        {item.quantity > 0 ? (item.price * item.quantity).toLocaleString() + "đ" : "-"}
+                    <div className="flex min-h-11 items-center justify-between border-t border-gray-200 pt-2">
+                      <span className="text-xs text-gray-500">Thành tiền</span>
+                      <span className="text-base font-bold text-amber-800">
+                        {item.quantity > 0 ? (item.price * item.quantity).toLocaleString() + "đ" : "—"}
                       </span>
                     </div>
                   </div>
@@ -802,7 +831,7 @@ export default function BillPage() {
               <select
                 value={selectedBankId}
                 onChange={(e) => setSelectedBankId(e.target.value)}
-                className="w-full max-w-[240px] p-2 bg-gray-50 border border-amber-100 rounded-lg text-xs font-medium text-amber-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                className="min-h-11 w-full max-w-[320px] rounded-lg border border-amber-100 bg-gray-50 px-3 text-sm font-medium text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
               >
                 {bankAccounts.length > 0 ? (
                   bankAccounts.map((b) => (
@@ -937,7 +966,7 @@ export default function BillPage() {
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <p style={{ fontSize: "20px", fontWeight: 700, letterSpacing: "1px", color: brand, margin: "0 0 6px 0" }}>PHIẾU BÁN HÀNG</p>
-                  <p style={{ fontSize: "12px", color: muted, margin: 0 }}>Ngày lập: {today}</p>
+          <p style={{ fontSize: "12px", color: muted, margin: 0 }}>Ngày lập: {billDateDisplay}</p>
                   {orderCode && <p style={{ fontSize: "12px", color: muted, margin: "4px 0 0 0" }}>Mã hóa đơn: <b style={{ color: text }}>{orderCode}</b></p>}
                 </div>
               </div>
@@ -1050,7 +1079,7 @@ export default function BillPage() {
           {/* Title & Date */}
           <div style={{ marginBottom: "15px" }}>
             <h2 style={{ fontSize: "22px", fontWeight: 700, color: "#283497", margin: 0, fontFamily: "'Times New Roman', serif" }}>Phiếu bán hàng</h2>
-            <p style={{ fontSize: "14px", color: "#d63384", margin: "5px 0 0 0", fontWeight: 600 }}>{today}</p>
+            <p style={{ fontSize: "14px", color: "#d63384", margin: "5px 0 0 0", fontWeight: 600 }}>{billDateDisplay}</p>
           </div>
 
           {/* Customer Info - 2 columns with box */}
