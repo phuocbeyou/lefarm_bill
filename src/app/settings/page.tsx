@@ -124,6 +124,17 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [showDebug, setShowDebug] = useState(false);
   const { isInstallable, isInstalled, isIOS, install } = usePWA();
+  const [billThemeNew, setBillThemeNew] = useState(false);
+
+  useEffect(() => {
+    try { setBillThemeNew(localStorage.getItem("billThemeNew") === "true"); } catch {}
+  }, []);
+
+  const toggleBillThemeNew = () => {
+    const next = !billThemeNew;
+    setBillThemeNew(next);
+    try { localStorage.setItem("billThemeNew", String(next)); } catch {}
+  };
 
   // Units state
   const [units, setUnits] = useState<Unit[]>([]);
@@ -703,6 +714,25 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
       
+      {/* Bill Theme Toggle (local only) */}
+      <Card className="bg-gray-900 border-gray-800">
+        <CardContent className="p-4 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="font-semibold text-white">Bill theme mới</h2>
+            <p className="text-xs text-gray-500">Dùng giao diện hóa đơn mới khi xuất PNG/PDF (lưu trên máy này)</p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={billThemeNew}
+            onClick={toggleBillThemeNew}
+            className={`relative w-12 h-7 rounded-full transition-colors flex-shrink-0 ${billThemeNew ? "bg-amber-600" : "bg-gray-700"}`}
+          >
+            <span className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform ${billThemeNew ? "translate-x-5" : ""}`} />
+          </button>
+        </CardContent>
+      </Card>
+
       {/* PWA Install Button / Instructions */}
       {!isInstalled && (
         <Card className="bg-amber-900/20 border-amber-800/50">

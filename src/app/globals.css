@@ -123,3 +123,9 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* ponytail: html2canvas 1.4.1 measures the text baseline with a 1x1 <img> inside a hidden
+   div on <body>; Tailwind's img{display:block} breaks that and draws exported bill text too low. */
+body > div > img[width="1"][height="1"] {
+  display: inline;
+}

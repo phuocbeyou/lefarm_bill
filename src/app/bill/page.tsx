@@ -119,44 +119,79 @@ async function generateVietQRPng(params: {
   });
 }
 
-async function overlayQrOnCanvas(
+const EXPORT_SCALE = 2;
+
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = src;
+  });
+}
+
+function drawImageOnCanvas(
   canvas: HTMLCanvasElement,
-  exportContainer: HTMLElement,
-  qrContainer: HTMLElement,
-  qrDataUrl: string
+  box: { x: number; y: number; w: number; h: number },
+  img: HTMLImageElement
 ) {
-  if (!qrDataUrl) return;
-  try {
-    const qrImg = new Image();
-    qrImg.src = qrDataUrl;
-    if (qrImg.decode) {
-      await qrImg.decode();
-    } else {
-      await new Promise((resolve) => {
-        qrImg.onload = resolve;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  // html2canvas leaves its scale/translate on this context; draw in raw canvas pixels
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(box.x, box.y, box.w, box.h);
+  ctx.drawImage(img, box.x, box.y, box.w, box.h);
+}
+
+// Renders the export template, then paints QR + logo on top so they are always visible
+// (html2canvas sometimes drops images, seen on Safari).
+async function renderBillCanvas(el: HTMLElement, qrSrc: string) {
+  // ponytail: overlay boxes are measured inside html2canvas's clone, not the live DOM —
+  // the clone has Tailwind stripped (line-height etc.), so its layout differs from the screen.
+  const boxes: { kind: string; x: number; y: number; w: number; h: number }[] = [];
+  const canvas = await html2canvas(el, {
+    scale: EXPORT_SCALE,
+    backgroundColor: "#ffffff",
+    useCORS: true,
+    logging: false,
+    onclone: (clonedDoc) => {
+      const styles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
+      styles.forEach((style) => {
+        if (style.parentNode !== clonedDoc.querySelector('[data-export-template]')?.parentNode) {
+          style.remove();
+        }
       });
+      const root = clonedDoc.querySelector<HTMLElement>("[data-export-template]");
+      if (!root) return;
+      const r = root.getBoundingClientRect();
+      root.querySelectorAll<HTMLElement>("[data-overlay]").forEach((node) => {
+        const b = node.getBoundingClientRect();
+        boxes.push({
+          kind: node.dataset.overlay || "",
+          x: (b.left - r.left) * EXPORT_SCALE,
+          y: (b.top - r.top) * EXPORT_SCALE,
+          w: b.width * EXPORT_SCALE,
+          h: b.height * EXPORT_SCALE,
+        });
+      });
+    },
+  });
+  for (const box of boxes) {
+    try {
+      if (box.kind === "qr") {
+        if (qrSrc) drawImageOnCanvas(canvas, box, await loadImage(qrSrc));
+      } else {
+        // ponytail: reuse the already-loaded on-page logo; re-fetching it failed on Safari
+        const live = el.querySelector<HTMLImageElement>('img[data-overlay="logo"]');
+        const img = live?.complete && live.naturalWidth ? live : await loadImage("/logo.jpg");
+        drawImageOnCanvas(canvas, box, img);
+      }
+    } catch (err) {
+      console.error("overlay draw error:", box.kind, err);
     }
-
-    const containerRect = exportContainer.getBoundingClientRect();
-    const qrRect = qrContainer.getBoundingClientRect();
-
-    const scaleX = canvas.width / containerRect.width;
-    const scaleY = canvas.height / containerRect.height;
-
-    const x = (qrRect.left - containerRect.left) * scaleX;
-    const y = (qrRect.top - containerRect.top) * scaleY;
-    const w = qrRect.width * scaleX;
-    const h = qrRect.height * scaleY;
-
-    const ctx = canvas.getContext("2d");
-    if (ctx) {
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(x, y, w, h);
-      ctx.drawImage(qrImg, x, y, w, h);
-    }
-  } catch (err) {
-    console.error("overlayQrOnCanvas error:", err);
   }
+  return canvas;
 }
 
 export default function BillPage() {
@@ -175,6 +210,8 @@ export default function BillPage() {
   const [exporting, setExporting] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [toastMessage, setToastMessage] = useState("");
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   
   // Bank state
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -187,11 +224,12 @@ export default function BillPage() {
 
   const billRef = useRef<HTMLDivElement>(null);
   const exportRef = useRef<HTMLDivElement>(null);
-  const exportQrContainerRef = useRef<HTMLDivElement>(null);
   const [qrBase64, setQrBase64] = useState<string>("");
+  const [billThemeNew, setBillThemeNew] = useState(false);
 
   useEffect(() => {
     setToday(new Date().toLocaleDateString("vi-VN"));
+    try { setBillThemeNew(localStorage.getItem("billThemeNew") === "true"); } catch {}
 
     const loadData = async () => {
       try {
@@ -282,7 +320,7 @@ export default function BillPage() {
   const handlePriceChange = (itemId: string, price: number) => {
     setBillItems((prev) =>
       prev.map((item) =>
-        item.id === itemId ? { ...item, price } : item
+        item.id === itemId ? { ...item, price: Math.max(0, price) } : item
       )
     );
   };
@@ -290,7 +328,7 @@ export default function BillPage() {
   const handleQuantityChange = (itemId: string, quantity: number) => {
     setBillItems((prev) =>
       prev.map((item) =>
-        item.id === itemId ? { ...item, quantity } : item
+        item.id === itemId ? { ...item, quantity: Math.max(0, quantity) } : item
       )
     );
   };
@@ -312,8 +350,23 @@ export default function BillPage() {
     (sum, item) => sum + item.price * item.quantity,
     0
   );
-  const total = subtotal - discount;
+  const appliedDiscount = Math.min(discount, subtotal);
+  const total = subtotal - appliedDiscount;
   const validItems = billItems.filter((item) => item.productId && item.quantity > 0);
+
+  useEffect(() => {
+    setDiscount((currentDiscount) => Math.min(currentDiscount, subtotal));
+  }, [subtotal]);
+
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToastMessage(""), 3000);
+  };
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+  }, []);
 
   const generateVietQRUrl = () => {
     const selectedBank = bankAccounts.find(b => b.id === selectedBankId);
@@ -398,25 +451,7 @@ export default function BillPage() {
         }
       }
 
-      const canvas = await html2canvas(exportRef.current, {
-        scale: 2,
-        backgroundColor: "#ffffff",
-        useCORS: true,
-        logging: false,
-        onclone: (clonedDoc) => {
-          const styles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
-          styles.forEach((style) => {
-            if (style.parentNode !== clonedDoc.querySelector('[data-export-template]')?.parentNode) {
-              style.remove();
-            }
-          });
-        },
-      });
-
-      // Overlay QR code directly onto the canvas to guarantee it is 100% visible
-      if (exportRef.current && exportQrContainerRef.current && pngData) {
-        await overlayQrOnCanvas(canvas, exportRef.current, exportQrContainerRef.current, pngData);
-      }
+      const canvas = await renderBillCanvas(exportRef.current, pngData);
       
       const blob = await new Promise<Blob | null>((resolve) =>
         canvas.toBlob(resolve, "image/png")
@@ -448,7 +483,7 @@ export default function BillPage() {
           price: item.price,
         })),
         subtotal,
-        discount,
+        discount: appliedDiscount,
         total,
       });
     } catch (error) {
@@ -480,27 +515,8 @@ export default function BillPage() {
         }
       }
 
-      const canvas = await html2canvas(exportRef.current, {
-        scale: 2,
-        backgroundColor: "#ffffff",
-        useCORS: true,
-        logging: false,
-        onclone: (clonedDoc) => {
-          const styles = clonedDoc.querySelectorAll('style, link[rel="stylesheet"]');
-          styles.forEach((style) => {
-            if (style.parentNode !== clonedDoc.querySelector('[data-export-template]')?.parentNode) {
-              style.remove();
-            }
-          });
-        },
-      });
-
-      // Overlay QR code directly onto the canvas to guarantee it is 100% visible
-      if (exportRef.current && exportQrContainerRef.current && pngData) {
-        await overlayQrOnCanvas(canvas, exportRef.current, exportQrContainerRef.current, pngData);
-      }
+      const canvas = await renderBillCanvas(exportRef.current, pngData);
       
-      const imgData = canvas.toDataURL("image/png");
       const pdf = new jsPDF({
         orientation: "portrait",
         unit: "mm",
@@ -508,9 +524,30 @@ export default function BillPage() {
       });
 
       const imgWidth = 190;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
-      pdf.addImage(imgData, "PNG", 10, 10, imgWidth, imgHeight);
+      const pageTop = 10;
+      const pageBottom = 10;
+      const pageContentHeight = 297 - pageTop - pageBottom;
+      const sourceSliceHeight = Math.floor((pageContentHeight / imgWidth) * canvas.width);
+      let sourceY = 0;
+      let pageIndex = 0;
+
+      while (sourceY < canvas.height) {
+        const sliceHeight = Math.min(sourceSliceHeight, canvas.height - sourceY);
+        const pageCanvas = document.createElement("canvas");
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = sliceHeight;
+        const pageContext = pageCanvas.getContext("2d");
+        if (!pageContext) throw new Error("Unable to create PDF page canvas");
+        pageContext.drawImage(canvas, 0, sourceY, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+
+        if (pageIndex > 0) pdf.addPage();
+        const sliceData = pageCanvas.toDataURL("image/png");
+        const sliceMmHeight = (sliceHeight * imgWidth) / canvas.width;
+        pdf.addImage(sliceData, "PNG", 10, pageTop, imgWidth, sliceMmHeight);
+
+        sourceY += sliceHeight;
+        pageIndex += 1;
+      }
       pdf.save(`hoadon_${orderCode || Date.now()}.pdf`);
     } catch (error) {
       console.error("Export PDF error:", error);
@@ -528,11 +565,19 @@ export default function BillPage() {
   }
 
   return (
-    <div className="p-4 space-y-4 pb-24">
+    <div className="mx-auto max-w-5xl space-y-5 p-4 pb-24 sm:p-6">
+      <div className="flex items-end justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-700">Bán hàng</p>
+          <h1 className="mt-1 text-2xl font-bold tracking-tight text-gray-900">Tạo phiếu bán hàng</h1>
+          <p className="mt-1 text-sm text-gray-500">Nhập thông tin đơn hàng, kiểm tra tổng tiền rồi xuất hóa đơn.</p>
+        </div>
+        <span className="hidden rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 sm:inline-flex">{today || "Hôm nay"}</span>
+      </div>
       {/* Bill Card - Input Form */}
-      <Card className="bg-white text-gray-800 border-0 shadow-xl rounded-2xl overflow-hidden" ref={billRef}>
+      <Card className="overflow-hidden rounded-2xl border border-gray-200 bg-white text-gray-800 shadow-sm" ref={billRef}>
         {/* Header */}
-        <div className="bg-gradient-to-r from-amber-800 to-amber-900 text-white p-4">
+        <div className="bg-gradient-to-r from-amber-900 via-amber-800 to-orange-800 p-5 text-white sm:p-6">
           <div className="flex items-center gap-3">
             <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur flex items-center justify-center flex-shrink-0 overflow-hidden">
               <img src="/logo.jpg" alt="Logo" className="w-12 h-12 rounded-full object-cover" />
@@ -548,12 +593,16 @@ export default function BillPage() {
         <CardContent className="p-4 space-y-4">
           {/* Title & Date */}
           <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-            <h2 className="text-lg font-bold text-amber-800">Phiếu bán hàng</h2>
-            <span className="text-sm font-medium text-amber-600 bg-amber-50 px-3 py-1 rounded-full">{today}</span>
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Thông tin đơn hàng</h2>
+              <p className="mt-0.5 text-xs text-gray-500">Ngày lập: {today}</p>
+            </div>
+            {orderCode && <span className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-700">#{orderCode}</span>}
           </div>
 
           {/* Customer Info */}
-          <div className="space-y-2">
+          <section className="space-y-2.5">
+            <h3 className="text-sm font-semibold text-gray-700">Thông tin khách hàng</h3>
             <div className="grid grid-cols-2 gap-2">
               <div className="relative" ref={customerInputRef}>
                 <Input
@@ -592,9 +641,9 @@ export default function BillPage() {
               placeholder="Địa chỉ"
               className="h-9 text-sm bg-gray-50 border-gray-200"
             />
-          </div>
+          </section>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Input
               value={orderCode}
               onChange={(e) => setOrderCode(e.target.value)}
@@ -603,24 +652,35 @@ export default function BillPage() {
             />
             <Input
               type="number"
-              value={discount || ""}
-              onChange={(e) => setDiscount(Number(e.target.value))}
+              min={0}
+              max={subtotal}
+              value={appliedDiscount || ""}
+              onChange={(e) => {
+                const enteredDiscount = Number(e.target.value) || 0;
+                if (enteredDiscount > subtotal) {
+                  showToast(`Giảm giá không thể lớn hơn tạm tính ${subtotal.toLocaleString()}đ.`);
+                }
+                setDiscount(Math.min(Math.max(0, enteredDiscount), subtotal));
+              }}
               placeholder="Giảm giá (đ)"
               className="h-9 text-sm bg-gray-50 border-gray-200"
             />
           </div>
 
           {/* Product List */}
-          <div className="space-y-2">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-600">Sản phẩm</h3>
-              <button onClick={addRow} className="text-xs text-amber-700 font-medium hover:underline">
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">Chi tiết sản phẩm</h3>
+                <p className="mt-0.5 text-xs text-gray-500">{validItems.length} sản phẩm trong đơn</p>
+              </div>
+              <button onClick={addRow} className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800 transition hover:bg-amber-100">
                 + Thêm dòng
               </button>
             </div>
 
             {billItems.map((item, index) => (
-              <div key={item.id} className="bg-gray-50 rounded-xl p-3 space-y-2">
+              <div key={item.id} className="space-y-2.5 rounded-xl border border-gray-200 bg-gray-50/70 p-3 sm:p-4">
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-gray-400 w-4">{index + 1}</span>
                   <select
@@ -650,6 +710,7 @@ export default function BillPage() {
                       <Input
                         type="number"
                         step="0.1"
+                        min="0"
                         value={item.quantity || ""}
                         onChange={(e) => handleQuantityChange(item.id, parseFloat(e.target.value) || 0)}
                         className="w-20 h-8 text-sm text-center bg-white border-gray-200"
@@ -713,15 +774,15 @@ export default function BillPage() {
           </div>
 
           {/* Totals */}
-          <div className="bg-gradient-to-r from-gray-50 to-gray-100 rounded-xl p-4 space-y-3">
+          <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-4 sm:p-5">
             <div className="flex justify-between text-sm text-gray-600">
               <span>Tạm tính:</span>
               <span>{subtotal.toLocaleString()}đ</span>
             </div>
-            {discount > 0 && (
+            {appliedDiscount > 0 && (
               <div className="flex justify-between text-sm text-amber-600">
                 <span>Giảm giá:</span>
-                <span>-{discount.toLocaleString()}đ</span>
+                <span>-{appliedDiscount.toLocaleString()}đ</span>
               </div>
             )}
             <div className="flex justify-between items-center pt-2 border-t border-gray-200">
@@ -822,8 +883,146 @@ export default function BillPage() {
         </div>
       </div>
 
+      {toastMessage && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-gray-900 px-4 py-3 text-center text-sm font-medium text-white shadow-xl"
+        >
+          {toastMessage}
+        </div>
+      )}
+
       {/* Hidden Export Template */}
       <div style={{ position: "fixed", left: "-9999px", top: 0 }}>
+        {billThemeNew ? (() => {
+          const currentBank = bankAccounts.find(b => b.id === selectedBankId);
+          const accountNumber = currentBank?.accountNumber || settings.accountNumber;
+          const bankName = currentBank?.bankName || settings.bankName;
+          const accountName = currentBank?.accountName || settings.accountName;
+          const fmt = (n: number) => n.toLocaleString("de-DE") + " đ";
+          const brand = "#78350f";
+          const brandLight = "#fffbeb";
+          const text = "#111827";
+          const muted = "#6b7280";
+          const line = "#e7d8c7";
+          const th = { padding: "10px 7px", fontSize: "11px", fontWeight: 700, color: brand, backgroundColor: "#faf4eb", border: `1px solid ${line}` };
+          const td = { padding: "9px 7px", height: "34px", fontSize: "12px", color: text, border: `1px solid ${line}` };
+          const row = { display: "flex", justifyContent: "space-between", gap: "16px", padding: "6px 0", fontSize: "13px" };
+          const info = { fontSize: "13px", margin: "0 0 7px 0", color: text };
+          const lbl = { color: muted };
+          const minVisibleRows = 6;
+          const emptyRows = Array.from({ length: Math.max(0, minVisibleRows - validItems.length) });
+          return (
+            <div
+              ref={exportRef}
+              data-export-template="true"
+              style={{
+                width: "600px",
+                backgroundColor: "#ffffff",
+                fontFamily: "Arial, Helvetica, sans-serif",
+                color: text,
+                padding: "30px 34px",
+              }}
+            >
+              {/* Header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "20px", borderBottom: `2px solid ${brand}`, marginBottom: "20px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                  <img data-overlay="logo" src="/logo.jpg" alt="Logo" style={{ width: "64px", height: "64px", borderRadius: "10px", objectFit: "cover" }} />
+                  <div>
+                    <p style={{ fontSize: "18px", fontWeight: 700, color: brand, margin: "0 0 5px 0" }}>{settings.shopName}</p>
+                    <p style={{ fontSize: "12px", color: muted, margin: "0 0 2px 0" }}>{settings.shopAddress}</p>
+                    <p style={{ fontSize: "12px", color: muted, margin: 0 }}>ĐT: {settings.shopPhone}</p>
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <p style={{ fontSize: "20px", fontWeight: 700, letterSpacing: "1px", color: brand, margin: "0 0 6px 0" }}>PHIẾU BÁN HÀNG</p>
+                  <p style={{ fontSize: "12px", color: muted, margin: 0 }}>Ngày lập: {today}</p>
+                  {orderCode && <p style={{ fontSize: "12px", color: muted, margin: "4px 0 0 0" }}>Mã hóa đơn: <b style={{ color: text }}>{orderCode}</b></p>}
+                </div>
+              </div>
+
+              {/* Customer */}
+              <div style={{ marginBottom: "14px", padding: "10px", backgroundColor: "#faf5ed", border: `1px solid ${line}`, borderRadius: "8px" }}>
+                <p style={{ fontSize: "11px", fontWeight: 700, color: brand, letterSpacing: "0.5px", margin: "0 0 8px 3px" }}>THÔNG TIN KHÁCH HÀNG</p>
+                <div style={{ display: "flex", gap: "0", padding: "9px 12px", backgroundColor: "#fff", border: `1px solid ${line}`, borderRadius: "7px" }}>
+                  <p style={{ ...info, flex: 1, margin: 0, paddingRight: "10px" }}><span style={lbl}>Khách hàng:</span><br /><b>{customerName || "Khách lẻ"}</b></p>
+                  <p style={{ ...info, flex: 1, margin: 0, padding: "0 12px", borderLeft: `1px solid ${line}` }}><span style={lbl}>Điện thoại:</span><br /><b>{customerPhone || "—"}</b></p>
+                  <p style={{ ...info, flex: 1, margin: 0, paddingLeft: "12px", borderLeft: `1px solid ${line}` }}><span style={lbl}>Địa chỉ:</span><br /><b>{customerAddress || "—"}</b></p>
+                </div>
+              </div>
+
+              {/* Product table */}
+              <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "12px", border: `1px solid ${line}` }}>
+                <thead>
+                  <tr>
+                    <th style={{ ...th, textAlign: "center", width: "38px" }}>#</th>
+                    <th style={{ ...th, textAlign: "left" }}>Sản phẩm</th>
+                    <th style={{ ...th, textAlign: "right", width: "70px" }}>Số lượng</th>
+                    <th style={{ ...th, textAlign: "center", width: "48px" }}>ĐVT</th>
+                    <th style={{ ...th, textAlign: "right", width: "96px" }}>Đơn giá</th>
+                    <th style={{ ...th, textAlign: "right", width: "104px" }}>Thành tiền</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {validItems.map((item, idx) => (
+                    <tr key={item.id}>
+                      <td style={{ ...td, textAlign: "center", color: muted }}>{idx + 1}</td>
+                      <td style={td}>{item.productName}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{item.quantity}</td>
+                      <td style={{ ...td, textAlign: "center", color: muted }}>{item.unit && item.unit !== "-" ? item.unit : "—"}</td>
+                      <td style={{ ...td, textAlign: "right" }}>{fmt(item.price)}</td>
+                      <td style={{ ...td, textAlign: "right", fontWeight: 700 }}>{fmt(item.price * item.quantity)}</td>
+                    </tr>
+                  ))}
+                  {emptyRows.map((_, idx) => (
+                    <tr key={`empty-${idx}`} aria-hidden="true">
+                      {Array.from({ length: 6 }, (_, cellIdx) => (
+                        <td key={cellIdx} style={{ ...td, color: "transparent" }}>&nbsp;</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {/* Totals */}
+              <div style={{ display: "flex", width: "100%", marginBottom: "12px", border: `1px solid ${line}`, borderRadius: "8px", overflow: "hidden", backgroundColor: brandLight }}>
+                <div style={{ flex: "0 0 55%", padding: "9px 14px" }}>
+                  <div style={{ ...row, padding: "5px 0" }}><span style={{ color: brand }}>Tạm tính:</span><b>{fmt(subtotal)}</b></div>
+                  <div style={{ ...row, padding: "5px 0", borderTop: `1px solid ${line}` }}><span style={{ color: brand }}>Giảm giá:</span><b>{fmt(appliedDiscount)}</b></div>
+                </div>
+                <div style={{ flex: 1, padding: "11px 14px", backgroundColor: brand, color: "#ffffff", display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center", textAlign: "center" }}>
+                  <span style={{ fontSize: "13px", fontWeight: 700, letterSpacing: "0.4px" }}>KHÁCH CẦN TRẢ</span>
+                  <span style={{ marginTop: "3px", fontSize: "23px", lineHeight: 1.2, fontWeight: 700 }}>{fmt(total)}</span>
+                </div>
+              </div>
+
+              {/* Payment */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "18px", border: `1px solid ${line}`, borderRadius: "8px", padding: "12px 14px", marginBottom: "14px", backgroundColor: "#fffdfa" }}>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: "13px", fontWeight: 700, color: brand, margin: "0 0 9px 0" }}>THÔNG TIN THANH TOÁN</p>
+                  <p style={{ ...row, justifyContent: "flex-start", margin: 0 }}><span style={{ ...lbl, width: "112px" }}>Ngân hàng:</span><b>{bankName}</b></p>
+                  <p style={{ ...row, justifyContent: "flex-start", margin: 0 }}><span style={{ ...lbl, width: "112px" }}>Số tài khoản:</span><b>{accountNumber}</b></p>
+                  <p style={{ ...row, justifyContent: "flex-start", margin: 0 }}><span style={{ ...lbl, width: "112px" }}>Chủ tài khoản:</span><b>{accountName}</b></p>
+                </div>
+                {(qrBase64 || qrCodeUrl) && (
+                  <div style={{ minWidth: "150px", paddingLeft: "14px", borderLeft: `1px solid ${line}`, textAlign: "center" }}>
+                    <p style={{ fontSize: "11px", fontWeight: 700, color: brand, margin: "0 0 5px 0" }}>Quét mã để thanh toán</p>
+                    <div data-overlay="qr" style={{ width: "124px", height: "124px", display: "inline-block", padding: "4px", border: `1px solid ${line}`, borderRadius: "8px", backgroundColor: "#ffffff" }}>
+                      <img src={qrBase64 || qrCodeUrl} alt="QR" style={{ width: "114px", height: "114px", objectFit: "contain" }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Notes */}
+              <div style={{ borderTop: `1px solid ${line}`, paddingTop: "10px", textAlign: "center", fontSize: "11px", color: muted }}>
+                <p style={{ margin: "0 0 4px 0", fontWeight: 700, color: brand }}>Cảm ơn quý khách đã mua hàng!</p>
+                <p style={{ margin: 0 }}>Mã QR đã bao gồm số tiền và nội dung chuyển khoản. Thanh toán khi nhận hàng có thể bỏ qua phần chuyển khoản.</p>
+              </div>
+            </div>
+          );
+        })() : (
         <div 
           ref={exportRef} 
           data-export-template="true"
@@ -840,7 +1039,7 @@ export default function BillPage() {
 
           {/* Header - Logo + Shop Info */}
           <div style={{ display: "flex", alignItems: "center", gap: "15px", marginBottom: "20px" }}>
-            <img src="/logo.jpg" alt="Logo" style={{ width: "70px", height: "70px", borderRadius: "8px", objectFit: "cover" }} />
+            <img data-overlay="logo" src="/logo.jpg" alt="Logo" style={{ width: "70px", height: "70px", borderRadius: "8px", objectFit: "cover" }} />
             <div>
               <h1 style={{ fontSize: "24px", fontWeight: 700, color: "#C6893F", margin: 0, fontFamily: "'Times New Roman', serif" }}>{settings.shopName}</h1>
               <p style={{ fontSize: "13px", color: "#333", margin: "5px 0 2px 0" }}>Địa chỉ: {settings.shopAddress}</p>
@@ -898,7 +1097,7 @@ export default function BillPage() {
 
           {/* Totals */}
           <div style={{ paddingTop: "10px", marginBottom: "25px" }}>
-            {discount > 0 && (
+            {appliedDiscount > 0 && (
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "5px" }}>
                 <span style={{ fontSize: "13px", color: "#283497", fontWeight: 600 }}>Giảm giá</span>
                 <span style={{ fontSize: "13px", color: "#333" }}></span>
@@ -932,7 +1131,7 @@ export default function BillPage() {
             {(qrBase64 || qrCodeUrl) && (
               <div style={{ textAlign: "center" }}>
                 <div 
-                  ref={exportQrContainerRef}
+                  data-overlay="qr"
                   style={{ width: "150px", height: "150px", display: "inline-block" }}
                 >
                   <img 
@@ -952,6 +1151,7 @@ export default function BillPage() {
             <p style={{ margin: "0" }}>*Quét mã QR để thanh toán nhanh hơn (QR đã bao gồm số tiền và nội dung thanh toán)</p>
           </div>
         </div>
+        )}
       </div>
     </div>
   );
